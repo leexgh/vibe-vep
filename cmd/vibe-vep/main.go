@@ -17,6 +17,7 @@ import (
 	"github.com/inodb/vibe-vep/internal/datasource/gnomad"
 	"github.com/inodb/vibe-vep/internal/datasource/hotspots"
 	"github.com/inodb/vibe-vep/internal/datasource/oncokb"
+	"github.com/inodb/vibe-vep/internal/datasource/refseq"
 	"github.com/inodb/vibe-vep/internal/duckdb"
 	"github.com/inodb/vibe-vep/internal/genomicindex"
 	"github.com/spf13/cobra"
@@ -222,7 +223,7 @@ func loadCache(logger *zap.Logger, assembly string, noCache, clearCache bool) (*
 	if err != nil {
 		return nil, err
 	}
-	gtfPath, fastaPath, canonicalPath, found := FindGENCODEFiles(assembly)
+	gtfPath, fastaPath, canonicalPath, refseqPath, found := FindGENCODEFiles(assembly)
 
 	c := cache.New()
 	cacheDir := DefaultGENCODEPath(assembly)
@@ -244,6 +245,10 @@ func loadCache(logger *zap.Logger, assembly string, noCache, clearCache bool) (*
 	if canonicalPath != "" {
 		canonicalFP, _ = duckdb.StatFile(canonicalPath)
 	}
+	refseqFP := duckdb.FileFingerprint{}
+	if refseqPath != "" {
+		refseqFP, _ = duckdb.StatFile(refseqPath)
+	}
 
 	// --- Transcript cache (gob) ---
 	transcriptsLoaded := false
@@ -254,7 +259,7 @@ func loadCache(logger *zap.Logger, assembly string, noCache, clearCache bool) (*
 			tc.Clear()
 			logger.Info("cleared transcript cache")
 		}
-	} else if err1 == nil && err2 == nil && tc.Valid(gtfFP, fastaFP, canonicalFP) {
+	} else if err1 == nil && err2 == nil && tc.Valid(gtfFP, fastaFP, canonicalFP, refseqFP) {
 		// Raw files present and fingerprints match — load validated cache.
 		start := time.Now()
 		if err := tc.Load(c); err != nil {
@@ -282,14 +287,14 @@ func loadCache(logger *zap.Logger, assembly string, noCache, clearCache bool) (*
 			return nil, fmt.Errorf("no GENCODE data or transcript cache found for %s\nHint: Download with: vibe-vep download --assembly %s", assembly, assembly)
 		}
 		// Load from GTF/FASTA
-		if err := loadFromGTFFASTA(logger, c, gtfPath, fastaPath, canonicalPath); err != nil {
+		if err := loadFromGTFFASTA(logger, c, gtfPath, fastaPath, canonicalPath, refseqPath); err != nil {
 			return nil, err
 		}
 
 		// Write transcript cache for next time
 		if !noCache && err1 == nil && err2 == nil {
 			start := time.Now()
-			if err := tc.Write(c, gtfFP, fastaFP, canonicalFP); err != nil {
+			if err := tc.Write(c, gtfFP, fastaFP, canonicalFP, refseqFP); err != nil {
 				logger.Warn("could not write transcript cache", zap.Error(err))
 			} else {
 				logger.Info("wrote transcript cache",
@@ -427,7 +432,7 @@ func buildSources(logger *zap.Logger, cacheDir, assembly string) []annotate.Anno
 }
 
 // loadFromGTFFASTA loads transcripts from GENCODE GTF and FASTA files.
-func loadFromGTFFASTA(logger *zap.Logger, c *cache.Cache, gtfPath, fastaPath, canonicalPath string) error {
+func loadFromGTFFASTA(logger *zap.Logger, c *cache.Cache, gtfPath, fastaPath, canonicalPath, refseqPath string) error {
 	start := time.Now()
 	loader := cache.NewGENCODELoader(gtfPath, fastaPath)
 
@@ -444,6 +449,20 @@ func loadFromGTFFASTA(logger *zap.Logger, c *cache.Cache, gtfPath, fastaPath, ca
 				zap.Int("ensembl", len(ensOverrides)),
 				zap.Int("entrez", len(entrezMap)))
 		}
+	}
+
+	if refseqPath != "" {
+		logger.Info("loading GENCODE RefSeq metadata", zap.String("path", refseqPath))
+		store, err := refseq.Load(refseqPath)
+		if err != nil {
+			logger.Warn("could not load GENCODE RefSeq metadata", zap.Error(err))
+		} else {
+			loader.SetRefSeqIDs(store.Map())
+			logger.Info("loaded GENCODE RefSeq metadata", zap.Int("transcripts", store.Count()))
+		}
+	} else {
+		logger.Warn("no GENCODE RefSeq metadata found; RefSeq accessions will be empty",
+			zap.String("hint", "re-run vibe-vep download to fetch it"))
 	}
 
 	if err := loader.Load(c); err != nil {

@@ -169,6 +169,7 @@ type GNTranscriptConsequenceSummary struct {
 	ConsequenceTerms      string            `json:"consequenceTerms,omitempty"`
 	VariantClassification string            `json:"variantClassification,omitempty"`
 	Exon                  string            `json:"exon,omitempty"`
+	RefSeq                string            `json:"refSeq,omitempty"`
 	ProteinPosition       *GNIntegerRange   `json:"proteinPosition,omitempty"`
 	PolyphenScore         *float64          `json:"polyphenScore,omitempty"`
 	PolyphenPrediction    string            `json:"polyphenPrediction,omitempty"`
@@ -205,6 +206,7 @@ type GNTranscriptConsequence struct {
 	Exon               string   `json:"exon"`
 	Intron             string   `json:"intron"`
 	Biotype            string   `json:"biotype"`
+	RefseqTranscriptIds []string `json:"refseq_transcript_ids,omitempty"`
 	Canonical          string   `json:"canonical"`
 	SIFTScore          *float64 `json:"sift_score"`
 	SIFTPrediction     string   `json:"sift_prediction"`

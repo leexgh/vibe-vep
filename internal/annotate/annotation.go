@@ -61,6 +61,7 @@ type Annotation struct {
 	ProteinID       string            // Ensembl protein ID (e.g., ENSP00000493376)
 	HGNCId          string            // HGNC identifier (e.g., HGNC:14825)
 	EntrezGeneID    string            // NCBI Entrez gene ID (e.g., "673")
+	RefSeqIDs       []string          // RefSeq mRNA accessions (versioned), in GENCODE metadata order
 	Consequence     string            // SO consequence term
 	Impact          string            // HIGH, MODERATE, LOW, MODIFIER
 	CDSPosition     int64             // Position in CDS, 0 if not in CDS

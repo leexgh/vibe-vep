@@ -364,6 +364,7 @@ type GENCODELoader struct {
 	mskCanonicalOverrides  CanonicalOverrides
 	ensCanonicalOverrides  CanonicalOverrides
 	entrezGeneIDs          GeneEntrezMap
+	refSeqIDs              map[string][]string
 }
 
 // NewGENCODELoader creates a loader for GENCODE GTF + FASTA files.
@@ -387,6 +388,13 @@ func (l *GENCODELoader) SetEntrezGeneIDs(entrez GeneEntrezMap) {
 	l.entrezGeneIDs = entrez
 }
 
+// SetRefSeqIDs sets the version-stripped transcript ID -> RefSeq mRNA
+// accessions mapping. Accession order is load-bearing: genome-nexus reports
+// only the first entry, so the GENCODE file order is preserved as-is.
+func (l *GENCODELoader) SetRefSeqIDs(refSeq map[string][]string) {
+	l.refSeqIDs = refSeq
+}
+
 // Load loads all transcripts and sequences into the cache.
 func (l *GENCODELoader) Load(c *Cache) error {
 	// Load GTF annotations
@@ -405,6 +413,19 @@ func (l *GENCODELoader) Load(c *Cache) error {
 			for _, t := range c.FindTranscriptsByChrom(chrom) {
 				if eid, ok := l.entrezGeneIDs[t.GeneName]; ok {
 					t.EntrezGeneID = eid
+				}
+			}
+		}
+	}
+
+	// Apply RefSeq accessions if loaded. Transcript.ID keeps its version
+	// suffix, so join on the version-stripped ID to stay robust to a GENCODE
+	// release skew between the GTF and the RefSeq metadata file.
+	if len(l.refSeqIDs) > 0 {
+		for _, chrom := range c.Chromosomes() {
+			for _, t := range c.FindTranscriptsByChrom(chrom) {
+				if ids, ok := l.refSeqIDs[stripVersion(t.ID)]; ok {
+					t.RefSeqIDs = ids
 				}
 			}
 		}

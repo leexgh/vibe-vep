@@ -52,7 +52,7 @@ func TestAnnotationSourcesBenchmark(t *testing.T) {
 	t.Logf("found %d MAF files in %s", len(mafFiles), studyDir)
 
 	// Load GENCODE cache.
-	gtfPath, fastaPath, canonicalPath := findGENCODEFiles(t, "GRCh38")
+	gtfPath, fastaPath, canonicalPath, _ := findGENCODEFiles(t, "GRCh38")
 	c := cache.New()
 	loader := cache.NewGENCODELoader(gtfPath, fastaPath)
 	if canonicalPath != "" {

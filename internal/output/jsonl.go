@@ -21,6 +21,9 @@ type VEPTranscriptConsequence struct {
 	ConsequenceTerms []string `json:"consequence_terms"`
 	Impact           string   `json:"impact"`
 	VariantAllele    string   `json:"variant_allele"`
+	// RefSeq mRNA accessions for this transcript, as VEP reports them with
+	// xref_refseq=1. genome-nexus takes the first entry for the MAF RefSeq column.
+	RefSeqTranscriptIDs []string `json:"refseq_transcript_ids,omitempty"`
 
 	// Protein fields
 	AminoAcids   string `json:"amino_acids,omitempty"`
@@ -86,6 +89,7 @@ type VibeVepTranscriptConsequence struct {
 	CanonicalMSKCC        bool              `json:"canonical_mskcc,omitempty"`
 	CanonicalEnsembl      bool              `json:"canonical_ensembl,omitempty"`
 	CanonicalMANE         bool              `json:"canonical_mane,omitempty"`
+	RefSeqTranscriptIDs   []string          `json:"refseq_transcript_ids,omitempty"`
 	Extra                 map[string]string `json:"extra,omitempty"`
 }
 
@@ -246,6 +250,7 @@ func (j *JSONLWriter) marshalVEP() ([]byte, error) {
 			HGVSp:            ann.HGVSp,
 			Exon:             ann.ExonNumber,
 			Intron:           ann.IntronNumber,
+			RefSeqTranscriptIDs: ann.RefSeqIDs,
 		}
 
 		// SIFT/PolyPhen from annotation source extras.
@@ -320,6 +325,7 @@ func (j *JSONLWriter) marshalVibeVep() ([]byte, error) {
 			CanonicalMSKCC:       ann.IsCanonicalMSK,
 			CanonicalEnsembl:     ann.IsCanonicalEnsembl,
 			CanonicalMANE:        ann.IsMANESelect,
+			RefSeqTranscriptIDs:  ann.RefSeqIDs,
 			Extra:                ann.Extra,
 		}
 		result.TranscriptConsequences = append(result.TranscriptConsequences, tc)

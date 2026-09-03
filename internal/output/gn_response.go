@@ -98,6 +98,7 @@ func MarshalGNAnnotation(input string, v *vcf.Variant, anns []*annotate.Annotati
 			Intron:           ann.IntronNumber,
 			Biotype:          ann.Biotype,
 			Canonical:        canonical,
+			RefseqTranscriptIds: ann.RefSeqIDs,
 		}
 
 		// SIFT/PolyPhen from annotation source extras.
@@ -295,6 +296,11 @@ func buildTranscriptConsequenceSummary(ann *annotate.Annotation, v *vcf.Variant)
 		ConsequenceTerms:      firstConsequence(ann.Consequence),
 		VariantClassification: SOToMAFClassification(ann.Consequence, v),
 		Exon:                  ann.ExonNumber,
+	}
+
+	// genome-nexus's RefSeqResolver reports the first RefSeq accession only.
+	if len(ann.RefSeqIDs) > 0 {
+		tcs.RefSeq = ann.RefSeqIDs[0]
 	}
 
 	if ann.ProteinPosition > 0 {
