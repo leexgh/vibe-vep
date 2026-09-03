@@ -57,7 +57,7 @@ func MarshalVEPAnnotation(input string, v *vcf.Variant, anns []*annotate.Annotat
 			CDSEnd:           ann.CDSPosition,
 			CDNAStart:        ann.CDNAPosition,
 			CDNAEnd:          ann.CDNAPosition,
-			HGVSc:            ann.HGVSc,
+			HGVSc:            prependTranscriptID(ann.TranscriptID, ann.HGVSc),
 			HGVSp:            ann.HGVSp,
 			Exon:             ann.ExonNumber,
 			Intron:           ann.IntronNumber,

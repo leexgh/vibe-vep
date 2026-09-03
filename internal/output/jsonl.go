@@ -242,7 +242,7 @@ func (j *JSONLWriter) marshalVEP() ([]byte, error) {
 			CDSEnd:           ann.CDSPosition,
 			CDNAStart:        ann.CDNAPosition,
 			CDNAEnd:          ann.CDNAPosition,
-			HGVSc:            ann.HGVSc,
+			HGVSc:            prependTranscriptID(ann.TranscriptID, ann.HGVSc),
 			HGVSp:            ann.HGVSp,
 			Exon:             ann.ExonNumber,
 			Intron:           ann.IntronNumber,
@@ -376,6 +376,16 @@ func stripVersion(id string) string {
 		return id[:i]
 	}
 	return id
+}
+
+// prependTranscriptID prepends the transcript ID (with version) to a bare HGVSc
+// notation, producing e.g. "ENST00000288602.6:c.1799T>A". Returns empty string
+// when hgvsc is empty (non-coding or unannotated variants).
+func prependTranscriptID(transcriptID, hgvsc string) string {
+	if hgvsc == "" {
+		return ""
+	}
+	return transcriptID + ":" + hgvsc
 }
 
 // formatAminoAcidsVEP converts "G12C" to "G/C" (VEP format).
