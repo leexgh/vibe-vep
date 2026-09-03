@@ -29,10 +29,7 @@ type GNMarshalOptions struct {
 func MarshalGNAnnotation(input string, v *vcf.Variant, anns []*annotate.Annotation, assembly string, opts ...GNMarshalOptions) ([]byte, error) {
 	ref, alt := alleleStrings(v)
 
-	end := v.Pos + int64(len(v.Ref)) - 1
-	if end < v.Pos {
-		end = v.Pos // insertions
-	}
+	start, end := mafCoordinates(v)
 
 	// Build HGVSg-style variant notation for the "variant" field.
 	variant := fmt.Sprintf("%s:g.%d%s>%s", v.Chrom, v.Pos, ref, alt)
@@ -44,7 +41,7 @@ func MarshalGNAnnotation(input string, v *vcf.Variant, anns []*annotate.Annotati
 		ID:                   annotate.FormatVariantID(v.Chrom, v.Pos, v.Ref, v.Alt),
 		AssemblyName:         assembly,
 		SeqRegionName:        v.Chrom,
-		Start:                v.Pos,
+		Start:                start,
 		End:                  end,
 		AlleleString:         ref + "/" + alt,
 		Strand:               1,
@@ -227,16 +224,13 @@ func MarshalGNAnnotation(input string, v *vcf.Variant, anns []*annotate.Annotati
 // buildAnnotationSummary constructs the annotation_summary enrichment.
 func buildAnnotationSummary(variant string, v *vcf.Variant, anns []*annotate.Annotation, canonical *annotate.Annotation, assembly string) *GNAnnotationSummary {
 	ref, alt := alleleStrings(v)
-	end := v.Pos + int64(len(v.Ref)) - 1
-	if end < v.Pos {
-		end = v.Pos
-	}
+	start, end := mafCoordinates(v)
 
 	summary := &GNAnnotationSummary{
 		Variant: variant,
 		GenomicLocation: GNGenomicLocation{
 			Chromosome:      v.Chrom,
-			Start:           v.Pos,
+			Start:           start,
 			End:             end,
 			ReferenceAllele: ref,
 			VariantAllele:   alt,

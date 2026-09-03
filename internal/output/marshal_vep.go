@@ -13,16 +13,13 @@ import (
 func MarshalVEPAnnotation(input string, v *vcf.Variant, anns []*annotate.Annotation, assembly string) ([]byte, error) {
 	ref, alt := alleleStrings(v)
 
-	end := v.Pos + int64(len(v.Ref)) - 1
-	if end < v.Pos {
-		end = v.Pos // insertions
-	}
+	start, end := vepCoordinates(v)
 
 	result := VEPVariantAnnotation{
 		Input:         input,
 		ID:            annotate.FormatVariantID(v.Chrom, v.Pos, v.Ref, v.Alt),
 		SeqRegionName: v.Chrom,
-		Start:         v.Pos,
+		Start:         start,
 		End:           end,
 		AlleleString:  ref + "/" + alt,
 		Strand:        1,

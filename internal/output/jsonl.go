@@ -198,20 +198,41 @@ func (j *JSONLWriter) flushVariant() error {
 	return nil
 }
 
+// vepCoordinates returns the start and end Ensembl VEP reports for a variant.
+//
+// For an insertion between bases N and N+1, VEP reports start=N+1 and end=N —
+// deliberately inverted, which is how consumers recognise a zero-length
+// reference. genome-nexus relies on it: GenomicLocationResolver takes
+// min(start,end) and max(start,end) to recover the MAF convention (N, N+1).
+// Emitting (N, N) instead leaves nothing to swap and yields a MAF End_Position
+// one base short on every insertion.
+func vepCoordinates(v *vcf.Variant) (start, end int64) {
+	if len(v.Ref) == 0 {
+		return v.Pos + 1, v.Pos
+	}
+	return v.Pos, v.Pos + int64(len(v.Ref)) - 1
+}
+
+// mafCoordinates returns the start and end in MAF convention, where an
+// insertion between N and N+1 is reported as (N, N+1).
+func mafCoordinates(v *vcf.Variant) (start, end int64) {
+	if len(v.Ref) == 0 {
+		return v.Pos, v.Pos + 1
+	}
+	return v.Pos, v.Pos + int64(len(v.Ref)) - 1
+}
+
 func (j *JSONLWriter) marshalVEP() ([]byte, error) {
 	v := j.curVariant
 	ref, alt := alleleStrings(v)
 
-	end := v.Pos + int64(len(v.Ref)) - 1
-	if end < v.Pos {
-		end = v.Pos // insertions
-	}
+	start, end := vepCoordinates(v)
 
 	result := VEPVariantAnnotation{
 		Input:         j.input,
 		ID:            annotate.FormatVariantID(v.Chrom, v.Pos, v.Ref, v.Alt),
 		SeqRegionName: v.Chrom,
-		Start:         v.Pos,
+		Start:         start,
 		End:           end,
 		AlleleString:  ref + "/" + alt,
 		Strand:        1,
@@ -279,15 +300,12 @@ func (j *JSONLWriter) marshalVibeVep() ([]byte, error) {
 	v := j.curVariant
 	ref, alt := alleleStrings(v)
 
-	end := v.Pos + int64(len(v.Ref)) - 1
-	if end < v.Pos {
-		end = v.Pos
-	}
+	start, end := mafCoordinates(v)
 
 	result := VibeVepVariantAnnotation{
 		Input:           j.input,
 		Chromosome:      v.Chrom,
-		Start:           v.Pos,
+		Start:           start,
 		End:             end,
 		ReferenceAllele: ref,
 		VariantAllele:   alt,
