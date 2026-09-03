@@ -1313,15 +1313,18 @@ func abs64(x int64) int64 {
 	return x
 }
 
-// formatCodonChange formats the codon change string with lowercase mutated base.
+// formatCodonChange formats the codon change the way Ensembl VEP does: both
+// codons are lowercased except the changed base, which is uppercased in the
+// reference codon as well as the alternate one (e.g. "gGt/gTt").
 // Uses byte arithmetic for case conversion to avoid allocations.
 func formatCodonChange(refCodon, altCodon string, posInCodon int) string {
 	var buf [7]byte // 3 ref + '/' + 3 alt
 	for i := 0; i < 3; i++ {
-		buf[i] = refCodon[i] | 0x20 // lowercase all ref
 		if i == posInCodon {
+			buf[i] = refCodon[i] &^ 0x20   // uppercase mutated ref
 			buf[4+i] = altCodon[i] &^ 0x20 // uppercase mutated alt
 		} else {
+			buf[i] = refCodon[i] | 0x20   // lowercase unchanged ref
 			buf[4+i] = altCodon[i] | 0x20 // lowercase unchanged alt
 		}
 	}

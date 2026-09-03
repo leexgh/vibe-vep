@@ -1077,3 +1077,27 @@ func TestPredictConsequence_MNVStartLost(t *testing.T) {
 	assert.Equal(t, ConsequenceStartLost, result.Consequence)
 	assert.Equal(t, ImpactHigh, result.Impact)
 }
+
+// TestFormatCodonChange pins VEP's convention: the changed base is uppercased
+// in BOTH codons. Previously the reference codon was fully lowercased, which
+// made vibe-vep's Codons column disagree with VEP on ~80% of coding SNVs
+// (e.g. "gat/gTt" instead of "gAt/gTt") purely on letter case.
+func TestFormatCodonChange(t *testing.T) {
+	tests := []struct {
+		ref, alt string
+		pos      int
+		want     string
+	}{
+		{"GGT", "TGT", 0, "Ggt/Tgt"}, // KRAS G12C
+		{"GGT", "GAT", 1, "gGt/gAt"}, // KRAS G12D
+		{"GGT", "GGA", 2, "ggT/ggA"},
+		{"GAT", "GTT", 1, "gAt/gTt"}, // FAT1 D114V
+		{"GTG", "GAG", 1, "gTg/gAg"}, // BRAF V600E
+		{"ggt", "gat", 1, "gGt/gAt"}, // lowercase input normalizes the same
+	}
+	for _, tc := range tests {
+		if got := formatCodonChange(tc.ref, tc.alt, tc.pos); got != tc.want {
+			t.Errorf("formatCodonChange(%q,%q,%d)=%q, want %q", tc.ref, tc.alt, tc.pos, got, tc.want)
+		}
+	}
+}
