@@ -456,18 +456,18 @@ func createForwardTranscript() *cache.Transcript {
 	//
 	// CDS: 1000-1020 (21bp from exon 1) + 1100-1180 (81bp from exon 2) = 102bp = 34 codons
 	return &cache.Transcript{
-		ID:          "ENST00000000001",
-		GeneID:      "ENSG00000000001",
-		GeneName:    "TEST",
-		Chrom:       "1",
-		Start:       990,
-		End:         1200,
-		Strand:      1,
-		Biotype:     "protein_coding",
+		ID:                 "ENST00000000001",
+		GeneID:             "ENSG00000000001",
+		GeneName:           "TEST",
+		Chrom:              "1",
+		Start:              990,
+		End:                1200,
+		Strand:             1,
+		Biotype:            "protein_coding",
 		IsCanonicalMSK:     true,
 		IsCanonicalEnsembl: true,
-		CDSStart:    1000,
-		CDSEnd:      1180,
+		CDSStart:           1000,
+		CDSEnd:             1180,
 		Exons: []cache.Exon{
 			{Number: 1, Start: 990, End: 1020, CDSStart: 1000, CDSEnd: 1020, Frame: 0},
 			{Number: 2, Start: 1100, End: 1200, CDSStart: 1100, CDSEnd: 1180, Frame: 0},
@@ -521,14 +521,18 @@ func TestAllocRegression_FormatHGVSc(t *testing.T) {
 			maxAllocs: 1, // single final string alloc
 		},
 		{
-			name:      "Deletion",
-			v:         &vcf.Variant{Chrom: "12", Pos: 25245350, Ref: "GG", Alt: "G"},
-			maxAllocs: 1, // single final string alloc
+			name: "Deletion",
+			v:    &vcf.Variant{Chrom: "12", Pos: 25245350, Ref: "GG", Alt: "G"},
+			// Two final string allocs: the HGVSc, plus the Codons string, which
+			// is built here because it must use the same 3'-shifted CDS
+			// coordinates as the HGVS. Both are written through stack buffers,
+			// so these are the two unavoidable result strings and nothing more.
+			maxAllocs: 2,
 		},
 		{
 			name:      "Insertion",
 			v:         &vcf.Variant{Chrom: "12", Pos: 25245350, Ref: "C", Alt: "CCC"},
-			maxAllocs: 1, // single final string alloc
+			maxAllocs: 2, // HGVSc + Codons, as above
 		},
 	}
 

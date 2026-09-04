@@ -304,6 +304,17 @@ func predictMNVConsequence(v *vcf.Variant, t *cache.Transcript, result *Conseque
 		return result
 	}
 
+	// Codons over the substituted CDS range. MNVs are not 3'-shifted, so the
+	// unshifted range is the one VEP reports.
+	mnvAlt := v.Alt
+	mnvStart := result.CDSPosition
+	if t.IsReverseStrand() {
+		mnvAlt = ReverseComplement(v.Alt)
+		mnvStart = result.CDSPosition - int64(len(v.Ref)) + 1
+	}
+	result.CodonChange = formatCodonChangeMNV(t.CDSSequence, mnvStart,
+		mnvStart+int64(len(v.Ref))-1, mnvAlt)
+
 	startPos, _, deletedAAs, insertedAAs := computeInframeProteinChange(v, t, result.CDSPosition)
 
 	switch {

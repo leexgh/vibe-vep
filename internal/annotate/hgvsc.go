@@ -118,6 +118,9 @@ func formatHGVScInsertion(v *vcf.Variant, t *cache.Transcript, prefix string, re
 		maxIdx := cdsExonEndIdx(cdsIdx, t)
 		shiftedIdx := shiftInsertionBuf(seq, cdsIdx, t.CDSSequence, maxIdx)
 		result.HGVSOffset = shiftedIdx - cdsIdx
+		// Codons are reported at the shifted position, like the HGVS itself.
+		result.CodonChange = formatCodonChangeCDS(t.CDSSequence,
+			int64(shiftedIdx+2), int64(shiftedIdx+1), string(seq))
 		seqLen := len(seq)
 
 		// Check dup: inserted bases match preceding bases at shifted position.
@@ -235,6 +238,12 @@ func formatHGVScDeletion(v *vcf.Variant, t *cache.Transcript, prefix string, ref
 	if delStartCDS > 0 && delEndCDS > 0 && len(t.CDSSequence) > 0 {
 		if len(extraAlt) > 0 {
 			// Delins: no 3' shift per HGVS convention.
+			codingExtra := extraAlt
+			if t.IsReverseStrand() {
+				codingExtra = ReverseComplement(extraAlt)
+			}
+			result.CodonChange = formatCodonChangeCDS(t.CDSSequence,
+				delStartCDS, delEndCDS, codingExtra)
 			// Write RC of extra alt directly into the output buffer for reverse strand.
 			var buf [128]byte
 			n := copy(buf[:], "c.")
@@ -261,6 +270,8 @@ func formatHGVScDeletion(v *vcf.Variant, t *cache.Transcript, prefix string, ref
 		maxIdx := cdsExonEndIdx(int(delEndCDS-1), t)
 		sStart, sEnd := shiftDeletionThreePrime(int(delStartCDS-1), int(delEndCDS-1), t.CDSSequence, maxIdx)
 		result.HGVSOffset = sStart - int(delStartCDS-1)
+		result.CodonChange = formatCodonChangeCDS(t.CDSSequence,
+			int64(sStart+1), int64(sEnd+1), "")
 		return cdsPosRangeStr(sStart+1, sEnd+1, "del")
 	}
 
