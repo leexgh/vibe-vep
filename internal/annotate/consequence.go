@@ -210,10 +210,19 @@ func PredictConsequence(v *vcf.Variant, t *cache.Transcript) *ConsequenceResult 
 		}
 	}
 
-	// For indels spanning into a splice site, upgrade to splice donor/acceptor
+	// A multi-base variant reaching into a splice site is reported as the splice
+	// consequence, plus coding_sequence_variant because it also alters coding
+	// sequence: VEP gives "splice_acceptor_variant,coding_sequence_variant".
 	if spliceSite := indelSpliceSiteType(v, t); spliceSite != "" {
-		result.Consequence = spliceSite
+		result.Consequence = joinConsequenceTerms([]string{spliceSite, ConsequenceCodingSequenceVariant})
 		result.Impact = GetImpact(spliceSite)
+		if t.IsProteinCoding() {
+			if pos := nearestSpliceBoundaryProteinPos(v.Pos, t); pos > 0 {
+				result.ProteinPosition = pos
+				result.ProteinStart = pos
+				result.HGVSp = FormatHGVSp(result)
+			}
+		}
 	} else if isSpliceRegion(v.Pos, t) {
 		// Append splice_region_variant if near exon boundary
 		result.Consequence = appendSpliceRegion(result.Consequence)
@@ -1282,7 +1291,10 @@ func appendSpliceRegion(consequence string) string {
 // in that range hits a ±1-2bp splice site, returns the splice consequence.
 // Returns empty string for SNVs or if no splice site is hit.
 func indelSpliceSiteType(v *vcf.Variant, t *cache.Transcript) string {
-	if !v.IsIndel() || len(v.Ref) <= 1 {
+	// Any variant spanning more than one base can reach a splice site, not just
+	// indels: a DNP/TNP/ONP straddling an exon boundary (c.421-1_421delinsAA)
+	// hits the acceptor dinucleotide just as an indel would.
+	if len(v.Ref) <= 1 {
 		return ""
 	}
 

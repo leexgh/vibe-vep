@@ -360,7 +360,12 @@ func TestDatahub_DeletionSpanningSpliceDonor(t *testing.T) {
 	// vibe-vep: splice_donor_variant (because deletion spans into splice site)
 	//
 	// vibe-vep correctly upgrades to splice_donor when the deletion overlaps
-	// the splice donor site. This is the correct higher-impact consequence.
+	// the splice donor site, and also reports coding_sequence_variant because
+	// the deletion starts inside the CDS. That co-term is what VEP does: of the
+	// multi-base variants with a splice donor/acceptor term in a VEP111
+	// MSK-IMPACT MAF, those overlapping coding sequence carry
+	// coding_sequence_variant (DEL 2,706 of 3,533; DNP 269 of 319), while the
+	// ones that stay inside the intron (c.718-22_718-2del) do not.
 
 	tr := &cache.Transcript{
 		ID: "ENST_DELSPLICE", GeneName: "DELSPLICE", Chrom: "1",
@@ -377,9 +382,9 @@ func TestDatahub_DeletionSpanningSpliceDonor(t *testing.T) {
 	v := &vcf.Variant{Chrom: "1", Pos: 1008, Ref: "GAAAAA", Alt: "G"}
 	result := PredictConsequence(v, tr)
 
-	if result.Consequence != ConsequenceSpliceDonor {
-		t.Errorf("deletion spanning splice donor should be splice_donor_variant, got %q",
-			result.Consequence)
+	want := ConsequenceSpliceDonor + "," + ConsequenceCodingSequenceVariant
+	if result.Consequence != want {
+		t.Errorf("deletion spanning splice donor should be %q, got %q", want, result.Consequence)
 	}
 }
 
