@@ -173,3 +173,43 @@ func joinConsequenceTerms(terms []string) string {
 	}
 	return res
 }
+
+// isDelIns reports whether the variant both deletes and inserts sequence, as
+// opposed to a pure insertion or pure deletion. Common prefix and suffix are
+// trimmed first so a VCF-style anchored representation ("AG" -> "A") is still
+// recognised as a pure deletion.
+//
+// VEP reports an in-frame delins as protein_altering_variant rather than
+// inframe_deletion or inframe_insertion: across 776 in-frame delins variants in
+// a VEP111 MSK-IMPACT MAF it says protein_altering_variant (642) or that plus a
+// splice or stop term, and never inframe_deletion/inframe_insertion.
+func isDelIns(ref, alt string) bool {
+	i := 0
+	for i < len(ref) && i < len(alt) && ref[i] == alt[i] {
+		i++
+	}
+	r, a := ref[i:], alt[i:]
+	j := 0
+	for j < len(r) && j < len(a) && r[len(r)-1-j] == a[len(a)-1-j] {
+		j++
+	}
+	return len(r)-j > 0 && len(a)-j > 0
+}
+
+// relabelInframeAsProteinAltering swaps an inframe_insertion/inframe_deletion
+// term for protein_altering_variant, preserving any co-terms and their order.
+func relabelInframeAsProteinAltering(consequence string) string {
+	var terms []string
+	start := 0
+	for i := 0; i <= len(consequence); i++ {
+		if i == len(consequence) || consequence[i] == ',' {
+			t := consequence[start:i]
+			if t == ConsequenceInframeInsertion || t == ConsequenceInframeDeletion {
+				t = ConsequenceProteinAltering
+			}
+			terms = append(terms, t)
+			start = i + 1
+		}
+	}
+	return joinConsequenceTerms(terms)
+}

@@ -381,7 +381,6 @@ func predictMNVConsequence(v *vcf.Variant, t *cache.Transcript, result *Conseque
 	return result
 }
 
-
 func predictIndelConsequence(v *vcf.Variant, t *cache.Transcript, result *ConsequenceResult) *ConsequenceResult {
 	refLen := len(v.Ref)
 	altLen := len(v.Alt)
@@ -582,6 +581,14 @@ func predictIndelConsequence(v *vcf.Variant, t *cache.Transcript, result *Conseq
 
 	result.Impact = GetImpact(result.Consequence)
 	result.HGVSp = FormatHGVSp(result)
+
+	// An in-frame change that both deletes and inserts is reported by VEP as
+	// protein_altering_variant rather than a clean inframe insertion/deletion.
+	// Relabel last: HGVSp and Impact are derived from the inframe term, and the
+	// protein change itself ("p.Lys745_Ala750delinsAsnSer") is unaffected.
+	if diff%3 == 0 && isDelIns(v.Ref, v.Alt) {
+		result.Consequence = relabelInframeAsProteinAltering(result.Consequence)
+	}
 	return result
 }
 
