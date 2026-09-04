@@ -76,6 +76,7 @@ func formatCodonChangeCDS(cdsSeq string, delStart, delEnd int64, inserted string
 	}
 	buf[k] = '/'
 	k++
+	altStart := k
 
 	// alt side: inserted bases uppercase, retained flanks lowercase
 	for pos := codonStart; pos <= codonEnd; pos++ {
@@ -90,6 +91,12 @@ func formatCodonChangeCDS(cdsSeq string, delStart, delEnd int64, inserted string
 		if pureInsertion && pos == delEnd {
 			k += copyUpper(buf[k:], inserted)
 		}
+	}
+	// A window that is wholly deleted leaves the alt side empty; VEP writes
+	// that as "-", e.g. "GGC/-".
+	if k == altStart {
+		buf[k] = '-'
+		k++
 	}
 	return string(buf[:k])
 }

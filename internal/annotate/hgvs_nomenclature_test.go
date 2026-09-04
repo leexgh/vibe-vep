@@ -247,13 +247,25 @@ func TestHGVS_Insertion_Plain(t *testing.T) {
 // HGVS: tandem duplications must use dup, not ins
 
 func TestHGVS_Dup_SingleBase(t *testing.T) {
-	// Insert G that matches preceding base → dup
+	// Insert G that matches the preceding base, with nothing to 3'-shift.
+	//
+	// Strict HGVS calls this a duplication, c.3dup. Ensembl VEP does not: it
+	// only uses "dup" when the 3' shift actually moved the variant. Across a
+	// VEP111 MSK-IMPACT MAF every one of its 10,025 dup descriptions carries
+	// hgvs_offset >= 1 and none has offset 0, while 18,227 of 18,523 ins
+	// descriptions have offset 0 -- including insertions inside a homopolymer
+	// where the preceding base does match (c.1663_1664insC in a CCCCC run).
+	//
+	// vibe-vep follows VEP here so the genome-nexus MAF matches, at the cost of
+	// diverging from strict HGVS for the unshifted case. Duplications that
+	// required a shift are still reported as dup, see TestHGVS_Dup_Shifted.
 	transcript := createDupTestTranscript()
 	v := &vcf.Variant{Chrom: "1", Pos: 1002, Ref: "G", Alt: "GG"}
 	result := PredictConsequence(v, transcript)
 	hgvsc := FormatHGVSc(v, transcript, result)
 
-	assert.Equal(t, "c.3dup", hgvsc)
+	assert.Equal(t, "c.3_4insG", hgvsc)
+	assert.Equal(t, 0, result.HGVSOffset, "no shift was needed, which is why VEP writes ins")
 }
 
 func TestHGVS_Dup_MultiBase(t *testing.T) {

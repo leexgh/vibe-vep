@@ -150,17 +150,18 @@ func TestGenomicToHGVScPos_FivePrimeUTR(t *testing.T) {
 }
 
 func TestFormatHGVSc_DupPrecedingBase(t *testing.T) {
-	// Test: insertion that duplicates the preceding (anchor) base.
-	// Forward strand transcript, CDS = "ATGATCGATCG..."
-	// Insert at pos 1002 (CDS pos 3 = 'G'), ref=G, alt=GG
-	// Inserted 'G' matches CDS pos 3 → c.3dup
+	// Test: insertion that duplicates the preceding (anchor) base, where no
+	// 3' shift is possible. VEP writes this as an insertion, not a duplication
+	// -- it reserves "dup" for variants the shift actually moved. See the note
+	// on TestHGVS_Dup_SingleBase for the counts behind that. Duplications that
+	// do shift are still reported as dup (TestHGVS_Dup_WithThreePrimeShift).
 	transcript := createDupTestTranscript()
 
 	v := &vcf.Variant{Chrom: "1", Pos: 1002, Ref: "G", Alt: "GG"}
 	result := PredictConsequence(v, transcript)
 	hgvsc := FormatHGVSc(v, transcript, result)
 
-	assert.Equal(t, "c.3dup", hgvsc)
+	assert.Equal(t, "c.3_4insG", hgvsc)
 }
 
 func TestFormatHGVSc_DupFollowingBase(t *testing.T) {

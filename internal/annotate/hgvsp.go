@@ -134,7 +134,13 @@ func FormatHGVSp(result *ConsequenceResult) string {
 		if result.FrameshiftStopDist > 0 {
 			n += copy(buf[n:], "fsTer")
 			n += putInt64(buf[n:], int64(result.FrameshiftStopDist))
+		} else if result.AltAA != 0 {
+			// No downstream stop found, but the new residue is known: VEP writes
+			// fsTer? (p.Pro315GlnfsTer?), shortening to p.P315Qfs*?.
+			n += copy(buf[n:], "fsTer?")
 		} else {
+			// Neither the new residue nor a stop is known — VEP writes a bare
+			// fs, as on splice-site deletions (p.K267fs).
 			n += copy(buf[n:], "fs")
 		}
 		return string(buf[:n])
