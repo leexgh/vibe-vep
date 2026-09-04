@@ -118,9 +118,12 @@ func formatHGVScInsertion(v *vcf.Variant, t *cache.Transcript, prefix string, re
 		maxIdx := cdsExonEndIdx(cdsIdx, t)
 		shiftedIdx := shiftInsertionBuf(seq, cdsIdx, t.CDSSequence, maxIdx)
 		result.HGVSOffset = shiftedIdx - cdsIdx
-		// Codons are reported at the shifted position, like the HGVS itself.
+		// Codons are reported at the UNSHIFTED position. VEP writes the HGVS at
+		// the 3'-shifted position but expands codons around where the change
+		// actually sits, so subtract the shift back out.
+		unshiftedAnchor := int64(shiftedIdx+1) - int64(result.HGVSOffset)
 		result.CodonChange = formatCodonChangeCDS(t.CDSSequence,
-			int64(shiftedIdx+2), int64(shiftedIdx+1), string(seq))
+			unshiftedAnchor+1, unshiftedAnchor, string(seq))
 		seqLen := len(seq)
 
 		// Check dup: inserted bases match preceding bases at shifted position.
@@ -270,8 +273,9 @@ func formatHGVScDeletion(v *vcf.Variant, t *cache.Transcript, prefix string, ref
 		maxIdx := cdsExonEndIdx(int(delEndCDS-1), t)
 		sStart, sEnd := shiftDeletionThreePrime(int(delStartCDS-1), int(delEndCDS-1), t.CDSSequence, maxIdx)
 		result.HGVSOffset = sStart - int(delStartCDS-1)
+		// Codons are expanded around the unshifted deleted range (see above).
 		result.CodonChange = formatCodonChangeCDS(t.CDSSequence,
-			int64(sStart+1), int64(sEnd+1), "")
+			int64(sStart+1-result.HGVSOffset), int64(sEnd+1-result.HGVSOffset), "")
 		return cdsPosRangeStr(sStart+1, sEnd+1, "del")
 	}
 
