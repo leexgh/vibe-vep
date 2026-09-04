@@ -713,6 +713,19 @@ func computeFrameshiftDetails(v *vcf.Variant, t *cache.Transcript, cdsPos int64)
 			startIdx = 0
 		}
 	}
+	// A pure insertion replaces nothing: the bases go AFTER the anchor base on
+	// the forward strand, so the split belongs one position further along.
+	// Splicing at the anchor instead inserts one base early, which in a repeat
+	// run yields a mutant that is NOT the 3'-shifted one and makes the scan
+	// below report a first-changed codon several residues too early. BRCA2
+	// c.2090_2091dup came out as p.E696Kfs*35 where the protein first differs
+	// at 698 (p.L698Nfs*33): residue 696 is Glu in both reference and mutant.
+	if len(ref) == 0 && t.IsForwardStrand() {
+		startIdx++
+		if startIdx > len(t.CDSSequence) {
+			startIdx = len(t.CDSSequence)
+		}
+	}
 
 	endIdx := startIdx + len(ref)
 	if endIdx > len(t.CDSSequence) {
