@@ -70,16 +70,16 @@ func FormatHGVSc(v *vcf.Variant, t *cache.Transcript, result *ConsequenceResult)
 	altLen := len(v.Alt)
 
 	if altLen > refLen {
-		return formatHGVScInsertion(v, t, prefix, refLen, altLen)
+		return formatHGVScInsertion(v, t, prefix, refLen, altLen, result)
 	}
 
-	return formatHGVScDeletion(v, t, prefix, refLen, altLen)
+	return formatHGVScDeletion(v, t, prefix, refLen, altLen, result)
 }
 
 // formatHGVScInsertion handles the insertion path of FormatHGVSc.
 // It computes the inserted sequence on the coding strand using a stack buffer
 // to avoid allocations from ReverseComplement.
-func formatHGVScInsertion(v *vcf.Variant, t *cache.Transcript, prefix string, refLen, altLen int) string {
+func formatHGVScInsertion(v *vcf.Variant, t *cache.Transcript, prefix string, refLen, altLen int, result *ConsequenceResult) string {
 	insLen := altLen - refLen
 
 	// Compute inserted sequence on coding strand into a stack buffer.
@@ -117,6 +117,7 @@ func formatHGVScInsertion(v *vcf.Variant, t *cache.Transcript, prefix string, re
 		// Shift insertion in place (modifies seq), stops at exon boundary
 		maxIdx := cdsExonEndIdx(cdsIdx, t)
 		shiftedIdx := shiftInsertionBuf(seq, cdsIdx, t.CDSSequence, maxIdx)
+		result.HGVSOffset = shiftedIdx - cdsIdx
 		seqLen := len(seq)
 
 		// Check dup: inserted bases match preceding bases at shifted position.
@@ -190,7 +191,7 @@ func formatHGVScInsertion(v *vcf.Variant, t *cache.Transcript, prefix string, re
 // formatHGVScDeletion handles the deletion (and delins) path of FormatHGVSc.
 // It avoids calling ReverseComplement for the ref/alt at the top since the
 // deletion CDS path only needs CDS positions and possibly RC of the extra alt bases.
-func formatHGVScDeletion(v *vcf.Variant, t *cache.Transcript, prefix string, refLen, altLen int) string {
+func formatHGVScDeletion(v *vcf.Variant, t *cache.Transcript, prefix string, refLen, altLen int, result *ConsequenceResult) string {
 	// Compute actual shared prefix length on genomic strand
 	sharedLen := 0
 	for sharedLen < refLen && sharedLen < altLen && v.Ref[sharedLen] == v.Alt[sharedLen] {
@@ -259,6 +260,7 @@ func formatHGVScDeletion(v *vcf.Variant, t *cache.Transcript, prefix string, ref
 		// Pure deletion: apply 3' shift (stops at exon boundary)
 		maxIdx := cdsExonEndIdx(int(delEndCDS-1), t)
 		sStart, sEnd := shiftDeletionThreePrime(int(delStartCDS-1), int(delEndCDS-1), t.CDSSequence, maxIdx)
+		result.HGVSOffset = sStart - int(delStartCDS-1)
 		return cdsPosRangeStr(sStart+1, sEnd+1, "del")
 	}
 

@@ -40,6 +40,9 @@ type VEPTranscriptConsequence struct {
 	// HGVS
 	HGVSc string `json:"hgvsc,omitempty"`
 	HGVSp string `json:"hgvsp,omitempty"`
+	// HGVSOffset is the 3' shift distance. VEP omits it when zero, and
+	// genome-nexus reads it from here for the MAF HGVS_Offset column.
+	HGVSOffset int `json:"hgvs_offset,omitempty"`
 
 	// Exon/Intron
 	Exon   string `json:"exon,omitempty"`
@@ -272,6 +275,7 @@ func (j *JSONLWriter) marshalVEP() ([]byte, error) {
 			Exon:             ann.ExonNumber,
 			Intron:           ann.IntronNumber,
 			RefSeqTranscriptIDs: ann.RefSeqIDs,
+			HGVSOffset:          ann.HGVSOffset,
 		}
 
 		// SIFT/PolyPhen from annotation source extras.

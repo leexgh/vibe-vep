@@ -30,6 +30,10 @@ type ConsequenceResult struct {
 	InsertedAAs        string // Inserted amino acids for inframe indels (single-letter codes)
 	IsDup              bool   // True if inframe insertion is a protein-level duplication
 	IsDelIns           bool   // True if insertion also modifies the anchor codon (delins format)
+	// HGVSOffset is how far the variant was 3'-shifted to reach its HGVS
+	// representation, in bases. VEP reports this as hgvs_offset and omits it
+	// when zero; genome-nexus surfaces it as the MAF HGVS_Offset column.
+	HGVSOffset int
 }
 
 // PredictConsequence determines the effect of a variant on a transcript.

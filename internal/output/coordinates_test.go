@@ -2,6 +2,7 @@ package output
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/inodb/vibe-vep/internal/vcf"
@@ -87,4 +88,29 @@ func max64(a, b int64) int64 {
 		return a
 	}
 	return b
+}
+
+// VEP reports how far it 3'-shifted an indel as hgvs_offset, and omits the
+// field when there was no shift. genome-nexus reads it straight off the
+// transcript consequence for the MAF HGVS_Offset column.
+func TestHGVSOffsetEmission(t *testing.T) {
+	v, ann := krasVariantAndAnnotation()
+	ann.HGVSOffset = 5
+
+	var result VEPVariantAnnotation
+	if err := json.Unmarshal([]byte(vepLineFromWriter(t, v, ann)), &result); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if got := result.TranscriptConsequences[0].HGVSOffset; got != 5 {
+		t.Errorf("hgvs_offset=%d, want 5", got)
+	}
+}
+
+func TestHGVSOffsetOmittedWhenZero(t *testing.T) {
+	v, ann := krasVariantAndAnnotation()
+	ann.HGVSOffset = 0
+
+	if line := vepLineFromWriter(t, v, ann); strings.Contains(line, "hgvs_offset") {
+		t.Errorf("expected hgvs_offset omitted when zero, got: %s", line)
+	}
 }

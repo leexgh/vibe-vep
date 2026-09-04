@@ -59,6 +59,7 @@ func MarshalVEPAnnotation(input string, v *vcf.Variant, anns []*annotate.Annotat
 			Exon:                ann.ExonNumber,
 			Intron:              ann.IntronNumber,
 			RefSeqTranscriptIDs: ann.RefSeqIDs,
+			HGVSOffset:          ann.HGVSOffset,
 		}
 
 		// SIFT/PolyPhen from annotation source extras.

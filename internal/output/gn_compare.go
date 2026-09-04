@@ -207,6 +207,7 @@ type GNTranscriptConsequence struct {
 	Intron             string   `json:"intron"`
 	Biotype            string   `json:"biotype"`
 	RefseqTranscriptIds []string `json:"refseq_transcript_ids,omitempty"`
+	HGVSOffset          int      `json:"hgvs_offset,omitempty"`
 	Canonical          string   `json:"canonical"`
 	SIFTScore          *float64 `json:"sift_score"`
 	SIFTPrediction     string   `json:"sift_prediction"`

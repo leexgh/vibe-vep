@@ -96,6 +96,7 @@ func MarshalGNAnnotation(input string, v *vcf.Variant, anns []*annotate.Annotati
 			Biotype:          ann.Biotype,
 			Canonical:        canonical,
 			RefseqTranscriptIds: ann.RefSeqIDs,
+			HGVSOffset:          ann.HGVSOffset,
 		}
 
 		// SIFT/PolyPhen from annotation source extras.
