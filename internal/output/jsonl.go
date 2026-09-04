@@ -98,16 +98,16 @@ type VibeVepTranscriptConsequence struct {
 
 // VibeVepVariantAnnotation is the top-level vibe-vep native JSON output.
 type VibeVepVariantAnnotation struct {
-	Input                  string                          `json:"input"`
-	Chromosome             string                          `json:"chromosome"`
-	Start                  int64                           `json:"start"`
-	End                    int64                           `json:"end"`
-	ReferenceAllele        string                          `json:"reference_allele"`
-	VariantAllele          string                          `json:"variant_allele"`
-	Assembly               string                          `json:"assembly"`
-	MostSevereConsequence  string                          `json:"most_severe_consequence"`
-	TranscriptConsequences []VibeVepTranscriptConsequence  `json:"transcript_consequences"`
-	Warnings               []string                        `json:"warnings,omitempty"`
+	Input                  string                         `json:"input"`
+	Chromosome             string                         `json:"chromosome"`
+	Start                  int64                          `json:"start"`
+	End                    int64                          `json:"end"`
+	ReferenceAllele        string                         `json:"reference_allele"`
+	VariantAllele          string                         `json:"variant_allele"`
+	Assembly               string                         `json:"assembly"`
+	MostSevereConsequence  string                         `json:"most_severe_consequence"`
+	TranscriptConsequences []VibeVepTranscriptConsequence `json:"transcript_consequences"`
+	Warnings               []string                       `json:"warnings,omitempty"`
 }
 
 // JSONLWriter writes annotations in JSONL format (one JSON line per variant).
@@ -253,27 +253,28 @@ func (j *JSONLWriter) marshalVEP() ([]byte, error) {
 	}
 
 	for _, ann := range j.curAnns {
+		pStart, pEnd := proteinRange(ann)
 		tc := VEPTranscriptConsequence{
-			TranscriptID:     stripVersion(ann.TranscriptID),
-			GeneID:           ann.GeneID,
-			GeneSymbol:       ann.GeneName,
-			GeneSymbolSource: "HGNC",
-			Biotype:          ann.Biotype,
-			ConsequenceTerms: splitConsequence(ann.Consequence),
-			Impact:           ann.Impact,
-			VariantAllele:    ann.Allele,
-			AminoAcids:       formatAminoAcidsVEP(ann.AminoAcidChange),
-			Codons:           ann.CodonChange,
-			ProteinStart:     ann.ProteinPosition,
-			ProteinEnd:       ann.ProteinPosition,
-			CDSStart:         ann.CDSPosition,
-			CDSEnd:           ann.CDSPosition,
-			CDNAStart:        ann.CDNAPosition,
-			CDNAEnd:          ann.CDNAPosition,
-			HGVSc:            prependTranscriptID(ann.TranscriptID, ann.HGVSc),
-			HGVSp:            ann.HGVSp,
-			Exon:             ann.ExonNumber,
-			Intron:           ann.IntronNumber,
+			TranscriptID:        stripVersion(ann.TranscriptID),
+			GeneID:              ann.GeneID,
+			GeneSymbol:          ann.GeneName,
+			GeneSymbolSource:    "HGNC",
+			Biotype:             ann.Biotype,
+			ConsequenceTerms:    splitConsequence(ann.Consequence),
+			Impact:              ann.Impact,
+			VariantAllele:       ann.Allele,
+			AminoAcids:          formatAminoAcidsVEP(ann.AminoAcidChange),
+			Codons:              ann.CodonChange,
+			ProteinStart:        pStart,
+			ProteinEnd:          pEnd,
+			CDSStart:            ann.CDSPosition,
+			CDSEnd:              ann.CDSPosition,
+			CDNAStart:           ann.CDNAPosition,
+			CDNAEnd:             ann.CDNAPosition,
+			HGVSc:               prependTranscriptID(ann.TranscriptID, ann.HGVSc),
+			HGVSp:               ann.HGVSp,
+			Exon:                ann.ExonNumber,
+			Intron:              ann.IntronNumber,
 			RefSeqTranscriptIDs: ann.RefSeqIDs,
 			HGVSOffset:          ann.HGVSOffset,
 		}
@@ -333,22 +334,22 @@ func (j *JSONLWriter) marshalVibeVep() ([]byte, error) {
 			Consequence:           ann.Consequence,
 			Impact:                ann.Impact,
 			VariantClassification: SOToMAFClassification(ann.Consequence, v),
-			HGVSc:                ann.HGVSc,
-			HGVSp:                ann.HGVSp,
-			HGVSpShort:           HGVSpToShort(ann.HGVSp),
-			ProteinPosition:      ann.ProteinPosition,
-			CDSPosition:          ann.CDSPosition,
-			CDNAPosition:         ann.CDNAPosition,
-			AminoAcidChange:      ann.AminoAcidChange,
-			Codons:               ann.CodonChange,
-			Exon:                 ann.ExonNumber,
-			Intron:               ann.IntronNumber,
-			Biotype:              ann.Biotype,
-			CanonicalMSKCC:       ann.IsCanonicalMSK,
-			CanonicalEnsembl:     ann.IsCanonicalEnsembl,
-			CanonicalMANE:        ann.IsMANESelect,
-			RefSeqTranscriptIDs:  ann.RefSeqIDs,
-			Extra:                ann.Extra,
+			HGVSc:                 ann.HGVSc,
+			HGVSp:                 ann.HGVSp,
+			HGVSpShort:            HGVSpToShort(ann.HGVSp),
+			ProteinPosition:       ann.ProteinPosition,
+			CDSPosition:           ann.CDSPosition,
+			CDNAPosition:          ann.CDNAPosition,
+			AminoAcidChange:       ann.AminoAcidChange,
+			Codons:                ann.CodonChange,
+			Exon:                  ann.ExonNumber,
+			Intron:                ann.IntronNumber,
+			Biotype:               ann.Biotype,
+			CanonicalMSKCC:        ann.IsCanonicalMSK,
+			CanonicalEnsembl:      ann.IsCanonicalEnsembl,
+			CanonicalMANE:         ann.IsMANESelect,
+			RefSeqTranscriptIDs:   ann.RefSeqIDs,
+			Extra:                 ann.Extra,
 		}
 		result.TranscriptConsequences = append(result.TranscriptConsequences, tc)
 	}
@@ -423,4 +424,3 @@ func formatAminoAcidsVEP(change string) string {
 	}
 	return change[:1] + "/" + change[len(change)-1:]
 }
-

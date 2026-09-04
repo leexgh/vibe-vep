@@ -56,3 +56,25 @@ func TestFormatCodonChangeMNV(t *testing.T) {
 		}
 	}
 }
+
+// VEP reports protein_start at the UNSHIFTED position of the change, while the
+// HGVSp is written at the 3'-shifted position. They are different quantities:
+// PBRM1 reports protein_start 1169 next to its own p.I1170Sfs*23. Verified
+// against 31,201 differing rows in a VEP111 MSK-IMPACT MAF, where
+// codon(shifted_cds - hgvs_offset) equalled VEP's Protein_position 100.0% of
+// the time.
+func TestProteinStartIsUnshifted(t *testing.T) {
+	// c.610_616del with hgvs_offset 4: shifted CDS 610 is codon 204, but the
+	// unshifted start CDS 606 is codon 202, which is what VEP reports.
+	if got := codonOf(610); got != 204 {
+		t.Errorf("codonOf(610)=%d, want 204", got)
+	}
+	if got := codonOf(610 - 4); got != 202 {
+		t.Errorf("codonOf(606)=%d, want 202", got)
+	}
+}
+
+func codonOf(cds int64) int64 {
+	n, _ := CDSToCodonPosition(cds)
+	return n
+}

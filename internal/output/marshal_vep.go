@@ -37,6 +37,7 @@ func MarshalVEPAnnotation(input string, v *vcf.Variant, anns []*annotate.Annotat
 	}
 
 	for _, ann := range anns {
+		pStart, pEnd := proteinRange(ann)
 		tc := VEPTranscriptConsequence{
 			TranscriptID:        stripVersion(ann.TranscriptID),
 			GeneID:              ann.GeneID,
@@ -48,8 +49,8 @@ func MarshalVEPAnnotation(input string, v *vcf.Variant, anns []*annotate.Annotat
 			VariantAllele:       ann.Allele,
 			AminoAcids:          formatAminoAcidsVEP(ann.AminoAcidChange),
 			Codons:              ann.CodonChange,
-			ProteinStart:        ann.ProteinPosition,
-			ProteinEnd:          ann.ProteinPosition,
+			ProteinStart:        pStart,
+			ProteinEnd:          pEnd,
 			CDSStart:            ann.CDSPosition,
 			CDSEnd:              ann.CDSPosition,
 			CDNAStart:           ann.CDNAPosition,
@@ -80,4 +81,21 @@ func MarshalVEPAnnotation(input string, v *vcf.Variant, anns []*annotate.Annotat
 	}
 
 	return json.Marshal(result)
+}
+
+// proteinRange returns the protein_start/protein_end VEP reports for an
+// annotation. These are the UNSHIFTED positions of the change, which differ
+// from the 3'-shifted position the HGVSp is written at: VEP reports PBRM1 as
+// protein_start 1169 alongside its own p.I1170Sfs*23. Falls back to the HGVS
+// position when the unshifted one was not computed (non-coding paths).
+func proteinRange(ann *annotate.Annotation) (start, end int64) {
+	start = ann.ProteinStart
+	if start == 0 {
+		start = ann.ProteinPosition
+	}
+	end = ann.ProteinEnd
+	if end == 0 {
+		end = start
+	}
+	return start, end
 }

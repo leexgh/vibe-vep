@@ -63,6 +63,8 @@ type Annotation struct {
 	EntrezGeneID       string            // NCBI Entrez gene ID (e.g., "673")
 	RefSeqIDs          []string          // RefSeq mRNA accessions (versioned), in GENCODE metadata order
 	HGVSOffset         int               // 3' shift distance applied to reach the HGVS representation
+	ProteinStart       int64             // VEP protein_start: unshifted position of the change
+	ProteinEnd         int64             // VEP protein_end
 	Consequence        string            // SO consequence term
 	Impact             string            // HIGH, MODERATE, LOW, MODIFIER
 	CDSPosition        int64             // Position in CDS, 0 if not in CDS

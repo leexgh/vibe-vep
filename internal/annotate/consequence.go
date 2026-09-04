@@ -30,6 +30,13 @@ type ConsequenceResult struct {
 	InsertedAAs        string // Inserted amino acids for inframe indels (single-letter codes)
 	IsDup              bool   // True if inframe insertion is a protein-level duplication
 	IsDelIns           bool   // True if insertion also modifies the anchor codon (delins format)
+	// ProteinStart/ProteinEnd are the positions VEP reports as protein_start
+	// and protein_end. They are the UNSHIFTED position of the change, whereas
+	// ProteinPosition is the 3'-shifted position the HGVSp is written at. VEP
+	// reports the two differently -- PBRM1 gives protein_start 1169 alongside
+	// its own p.I1170Sfs*23 -- so they cannot share one field.
+	ProteinStart int64
+	ProteinEnd   int64
 	// HGVSOffset is how far the variant was 3'-shifted to reach its HGVS
 	// representation, in bases. VEP reports this as hgvs_offset and omits it
 	// when zero; genome-nexus surfaces it as the MAF HGVS_Offset column.
@@ -229,6 +236,7 @@ func predictCodingConsequence(v *vcf.Variant, t *cache.Transcript, exon *cache.E
 	// Calculate codon position
 	codonNum, posInCodon := CDSToCodonPosition(cdsPos)
 	result.ProteinPosition = codonNum
+	result.ProteinStart = codonNum
 
 	// Handle indels
 	if v.IsIndel() {
@@ -401,11 +409,34 @@ func predictIndelConsequence(v *vcf.Variant, t *cache.Transcript, result *Conseq
 			delCodonNum, _ := CDSToCodonPosition(firstDelCDS)
 			result.ProteinPosition = delCodonNum
 		}
+		// protein_start is reported at the first genuinely changed base. The
+		// positions above assume a VCF anchor (v.Pos+1), but genome-nexus sends
+		// MAF-style alleles where v.Pos IS the first deleted base, which put
+		// protein_start one codon too high on every such deletion.
+		shared := 0
+		for shared < len(v.Ref) && shared < len(v.Alt) && v.Ref[shared] == v.Alt[shared] {
+			shared++
+		}
+		firstChanged, lastChanged := v.Pos+int64(shared), v.Pos+int64(refLen)-1
+		if !t.IsForwardStrand() {
+			firstChanged, lastChanged = lastChanged, firstChanged
+		}
+		if cds := GenomicToCDS(firstChanged, t); cds > 0 {
+			n, _ := CDSToCodonPosition(cds)
+			result.ProteinStart = n
+		}
+		if cds := GenomicToCDS(lastChanged, t); cds > 0 {
+			n, _ := CDSToCodonPosition(cds)
+			if n > result.ProteinStart {
+				result.ProteinEnd = n
+			}
+		}
 		// Compute end position for multi-codon deletions
 		if lastDelCDS := GenomicToCDS(lastDelGenomic, t); lastDelCDS > 0 {
 			endCodonNum, _ := CDSToCodonPosition(lastDelCDS)
 			if endCodonNum > result.ProteinPosition {
 				result.ProteinEndPosition = endCodonNum
+				result.ProteinEnd = endCodonNum
 				endCodon := GetCodon(t.CDSSequence, endCodonNum)
 				if len(endCodon) == 3 {
 					result.EndAA = TranslateCodon(endCodon)

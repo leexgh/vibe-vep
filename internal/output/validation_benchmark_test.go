@@ -332,10 +332,10 @@ func TestMismatchCollection(t *testing.T) {
 	}
 
 	report := struct {
-		Dataset    string                        `json:"dataset"`
-		Total      int                           `json:"total_mismatches"`
-		Mismatches []mismatchRecord              `json:"mismatches"`
-		Groups     map[string]*consequenceGroup  `json:"consequence_groups"`
+		Dataset    string                       `json:"dataset"`
+		Total      int                          `json:"total_mismatches"`
+		Mismatches []mismatchRecord             `json:"mismatches"`
+		Groups     map[string]*consequenceGroup `json:"consequence_groups"`
 	}{
 		Dataset:    datasetName,
 		Total:      len(mismatches),
@@ -1070,18 +1070,18 @@ type reportTable struct {
 
 // reportJSON is the top-level JSON structure for validation reports.
 type reportJSON struct {
-	Assembly           string                  `json:"assembly"`
-	Generated          string                  `json:"generated"`
-	Transcripts        int                     `json:"transcripts"`
-	LoadSource         string                  `json:"load_source"`
-	LoadDuration       string                  `json:"load_duration"`
-	Workers            int                     `json:"workers"`
-	Studies            int                     `json:"studies"`
-	System             *systemInfo             `json:"system,omitempty"`
-	MatchRates         reportTable             `json:"match_rates"`
-	CategoryBreakdowns map[string]reportTable   `json:"category_breakdowns"`
-	CancerGenes        *reportCancerGenes      `json:"cancer_genes,omitempty"`
-	Performance        reportTable             `json:"performance"`
+	Assembly           string                 `json:"assembly"`
+	Generated          string                 `json:"generated"`
+	Transcripts        int                    `json:"transcripts"`
+	LoadSource         string                 `json:"load_source"`
+	LoadDuration       string                 `json:"load_duration"`
+	Workers            int                    `json:"workers"`
+	Studies            int                    `json:"studies"`
+	System             *systemInfo            `json:"system,omitempty"`
+	MatchRates         reportTable            `json:"match_rates"`
+	CategoryBreakdowns map[string]reportTable `json:"category_breakdowns"`
+	CancerGenes        *reportCancerGenes     `json:"cancer_genes,omitempty"`
+	Performance        reportTable            `json:"performance"`
 }
 
 type reportCancerGenes struct {

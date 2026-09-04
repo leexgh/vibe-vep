@@ -126,6 +126,11 @@ func FormatHGVSp(result *ConsequenceResult) string {
 		if result.AltAA != 0 {
 			n += copy(buf[n:], aaThree(result.AltAA))
 		}
+		// A frameshift whose first new codon is already a stop is written as a
+		// plain nonsense change: VEP reports p.Ser70Ter, not p.Ser70TerfsTer1.
+		if result.AltAA == '*' && result.FrameshiftStopDist == 1 {
+			return string(buf[:n])
+		}
 		if result.FrameshiftStopDist > 0 {
 			n += copy(buf[n:], "fsTer")
 			n += putInt64(buf[n:], int64(result.FrameshiftStopDist))
