@@ -65,15 +65,24 @@ func PredictConsequence(v *vcf.Variant, t *cache.Transcript) *ConsequenceResult 
 	if exon == nil {
 		// Intronic - check splice sites (±1-2bp), then splice region (±3-8bp)
 		// For indels, check the entire span for splice site overlap
-		if spliceSite := indelSpliceSiteType(v, t); spliceSite != "" {
-			result.Consequence = spliceSite
-			result.Impact = GetImpact(spliceSite)
-		} else if spliceSite := spliceSiteType(v.Pos, t); spliceSite != "" {
-			result.Consequence = spliceSite
-			result.Impact = GetImpact(spliceSite)
-		} else if isSpliceRegion(v.Pos, t) {
-			result.Consequence = ConsequenceSpliceRegionIntron
-			result.Impact = GetImpact(ConsequenceSpliceRegion)
+		// Collect the SO terms for every intronic position the variant covers.
+		// VEP distinguishes the donor 5th base, the donor region and the
+		// polypyrimidine tract, which a single splice_region_variant hides.
+		var terms []string
+		spanEnd := v.Pos + int64(len(v.Ref)) - 1
+		if spanEnd < v.Pos {
+			spanEnd = v.Pos
+		}
+		for pos := v.Pos; pos <= spanEnd; pos++ {
+			if off, ok := intronOffset(pos, t); ok {
+				terms = append(terms, spliceTermsForOffset(off)...)
+			} else {
+				terms = append(terms, ConsequenceCodingSequenceVariant)
+			}
+		}
+		if joined := joinConsequenceTerms(terms); joined != "" {
+			result.Consequence = joined
+			result.Impact = GetImpact(firstTerm(joined))
 		} else {
 			result.Consequence = ConsequenceIntronVariant
 			result.Impact = GetImpact(ConsequenceIntronVariant)
@@ -561,11 +570,13 @@ func predictIndelConsequence(v *vcf.Variant, t *cache.Transcript, result *Conseq
 				result.AltAA = altAA
 			}
 			result.FrameshiftStopDist = stopDist
-			// If the frameshift immediately creates a stop codon at the
-			// variant position, reclassify as stop_gained per VEP convention.
-			if stopDist == 1 && altAA == '*' {
-				result.Consequence = ConsequenceStopGained
-			}
+			// A frameshift that immediately hits a stop stays a
+			// frameshift_variant. VEP never reports stop_gained on its own for
+			// a frameshift-length indel: across 62,967 such variants in a
+			// VEP111 MSK-IMPACT MAF it reports frameshift_variant (58,253),
+			// frameshift_variant with a splice term, or
+			// "stop_gained,frameshift_variant" (517) -- but stop_gained alone
+			// zero times. Reclassifying here cost 2,427 rows.
 		}
 	}
 
@@ -1117,6 +1128,16 @@ func CDSToCodonPosition(cdsPos int64) (codonNumber int64, positionInCodon int) {
 	codonNumber = (cdsPos-1)/3 + 1
 	positionInCodon = int((cdsPos - 1) % 3)
 	return
+}
+
+// firstTerm returns the leading (most severe) term of a comma-joined list.
+func firstTerm(consequence string) string {
+	for i := 0; i < len(consequence); i++ {
+		if consequence[i] == ',' {
+			return consequence[:i]
+		}
+	}
+	return consequence
 }
 
 // spliceSiteType returns the splice site consequence (splice_donor_variant or

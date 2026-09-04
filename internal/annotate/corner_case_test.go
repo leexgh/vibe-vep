@@ -27,13 +27,18 @@ func TestCorner_InsertionAtCodonBoundary(t *testing.T) {
 	}
 
 	// Insert T after CDS pos 6 (between codon 2 and 3): ref=T, alt=TT at genomic 1005
-	// Mutant: ATG GCT TAA A... → stop at codon 3, so VEP reclassifies as stop_gained
-	// when the first new codon is a stop. This is correct VEP behavior.
+	// Mutant: ATG GCT TAA A... → the first new codon is a stop.
+	//
+	// It stays a frameshift_variant. This previously asserted stop_gained on the
+	// belief that VEP reclassifies when the frameshift hits a stop immediately,
+	// but VEP does not: across 62,967 frameshift-length indels in a VEP111
+	// MSK-IMPACT MAF it reports frameshift_variant (58,253), frameshift_variant
+	// with a splice term, or "stop_gained,frameshift_variant" (517) — and
+	// stop_gained on its own zero times.
 	v := &vcf.Variant{Chrom: "1", Pos: 1005, Ref: "T", Alt: "TT"}
 	result := PredictConsequence(v, tr)
 
-	// Frameshift that immediately creates stop is reclassified as stop_gained
-	assert.Equal(t, ConsequenceStopGained, result.Consequence)
+	assert.Equal(t, ConsequenceFrameshiftVariant, result.Consequence)
 	assert.Equal(t, ImpactHigh, result.Impact)
 }
 

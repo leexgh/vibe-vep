@@ -417,7 +417,11 @@ func TestPredictConsequence_DeletionSpanningSpliceDonor(t *testing.T) {
 	transcript := createKRASTranscript()
 	result := PredictConsequence(v, transcript)
 
-	assert.Equal(t, ConsequenceSpliceDonor, result.Consequence)
+	// The span reaches the 5th intronic base, so VEP also reports
+	// splice_donor_5th_base_variant and intron_variant. It does not additionally
+	// report splice_donor_region_variant: the 5th-base term is the more specific
+	// one where the two overlap.
+	assert.Equal(t, "splice_donor_variant,splice_donor_5th_base_variant,intron_variant", result.Consequence)
 	assert.Equal(t, ImpactHigh, result.Impact)
 }
 
@@ -474,8 +478,10 @@ func TestIsSpliceRegion(t *testing.T) {
 }
 
 func TestPredictConsequence_SpliceRegionIntronic(t *testing.T) {
-	// Variant 5bp into intron after exon 2 End (25245395)
-	// Position 25245400 = 5bp after exon boundary -> splice_region_variant,intron_variant
+	// KRAS is reverse strand, so 5bp past exon 2 End (25245395) is 5 bases
+	// BEFORE the exon in transcript orientation: acceptor offset -5, inside the
+	// polypyrimidine tract. VEP reports the tract term here — verified on 118
+	// single-base substitutions at acceptor -3..-8 in a VEP111 MSK-IMPACT MAF.
 	v := &vcf.Variant{
 		Chrom: "12",
 		Pos:   25245400,
@@ -486,7 +492,7 @@ func TestPredictConsequence_SpliceRegionIntronic(t *testing.T) {
 	transcript := createKRASTranscript()
 	result := PredictConsequence(v, transcript)
 
-	expected := "splice_region_variant,intron_variant"
+	expected := "splice_region_variant,splice_polypyrimidine_tract_variant,intron_variant"
 	assert.Equal(t, expected, result.Consequence)
 	assert.Equal(t, "LOW", result.Impact)
 }
