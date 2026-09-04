@@ -296,6 +296,7 @@ func (j *JSONLWriter) marshalVEP() ([]byte, error) {
 		result.TranscriptConsequences = append(result.TranscriptConsequences, tc)
 	}
 
+	sortVEPTranscripts(result.TranscriptConsequences)
 	result.Warnings = j.warnings
 
 	return json.Marshal(result)

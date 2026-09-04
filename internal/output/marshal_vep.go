@@ -2,6 +2,7 @@ package output
 
 import (
 	"encoding/json"
+	"sort"
 	"strconv"
 
 	"github.com/inodb/vibe-vep/internal/annotate"
@@ -80,6 +81,8 @@ func MarshalVEPAnnotation(input string, v *vcf.Variant, anns []*annotate.Annotat
 		result.TranscriptConsequences = append(result.TranscriptConsequences, tc)
 	}
 
+	sortVEPTranscripts(result.TranscriptConsequences)
+
 	return json.Marshal(result)
 }
 
@@ -98,4 +101,20 @@ func proteinRange(ann *annotate.Annotation) (start, end int64) {
 		end = start
 	}
 	return start, end
+}
+
+// sortVEPTranscripts orders transcript consequences by ascending transcript ID,
+// which is the order Ensembl VEP emits them in (verified across 22 real VEP
+// fixtures, with no exceptions).
+//
+// The order is load-bearing, not cosmetic. genome-nexus breaks a tie between
+// equally-severe canonical candidates with bestCandidates.get(0) -- i.e. the
+// first one in this list -- so emitting a different order silently changes the
+// transcript picked for the MAF. CDKN2A is the clearest case: ENST00000304494
+// and ENST00000579755 are both protein_coding frameshift_variant and both get
+// flagged canonical, so whichever is listed first wins.
+func sortVEPTranscripts(tcs []VEPTranscriptConsequence) {
+	sort.SliceStable(tcs, func(i, j int) bool {
+		return tcs[i].TranscriptID < tcs[j].TranscriptID
+	})
 }

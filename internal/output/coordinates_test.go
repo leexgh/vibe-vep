@@ -1,6 +1,7 @@
 package output
 
 import (
+	"bytes"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -112,5 +113,40 @@ func TestHGVSOffsetOmittedWhenZero(t *testing.T) {
 
 	if line := vepLineFromWriter(t, v, ann); strings.Contains(line, "hgvs_offset") {
 		t.Errorf("expected hgvs_offset omitted when zero, got: %s", line)
+	}
+}
+
+// genome-nexus breaks a tie between equally-severe canonical candidates with
+// bestCandidates.get(0), so the order transcripts are emitted in decides which
+// one lands in the MAF. Ensembl VEP orders them by ascending transcript ID
+// (22/22 real VEP fixtures, no exceptions).
+func TestVEPTranscriptsSortedAscending(t *testing.T) {
+	v, ann := krasVariantAndAnnotation()
+	ann.TranscriptID = "ENST00000579755.1"
+	_, ann2 := krasVariantAndAnnotation()
+	ann2.TranscriptID = "ENST00000304494.1"
+
+	var buf bytes.Buffer
+	w := NewJSONLWriter(&buf, "ensembl-vep-jsonl", "GRCh37")
+	w.SetInput("9,21971091,21971092,-,C")
+	if err := w.Write(v, ann); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Write(v, ann2); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	var result VEPVariantAnnotation
+	if err := json.Unmarshal([]byte(buf.String()), &result); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	ids := make([]string, len(result.TranscriptConsequences))
+	for i, tc := range result.TranscriptConsequences {
+		ids[i] = tc.TranscriptID
+	}
+	if len(ids) != 2 || ids[0] != "ENST00000304494" || ids[1] != "ENST00000579755" {
+		t.Errorf("transcript order = %v, want ascending [ENST00000304494 ENST00000579755]", ids)
 	}
 }
