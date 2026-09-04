@@ -483,8 +483,11 @@ func predictIndelConsequence(v *vcf.Variant, t *cache.Transcript, result *Conseq
 		// In-frame
 		if diff > 0 {
 			result.Consequence = ConsequenceInframeInsertion
-			// Check if in-frame insertion creates a stop codon
-			if indelCreatesStop(v, t, result.CDSPosition) {
+			// Check if in-frame insertion creates a stop codon. Skipped for a
+			// delins: the junction scan misreads those, reporting p.H707* where
+			// VEP gives the full p.H707_H712delinsQCF, and VEP puts stop_gained
+			// on only 30 of 776 in-frame delins variants (3.9%).
+			if !isDelIns(v.Ref, v.Alt) && indelCreatesStop(v, t, result.CDSPosition) {
 				result.Consequence = ConsequenceStopGained
 			}
 			// Compute inserted amino acids via protein comparison
@@ -555,8 +558,9 @@ func predictIndelConsequence(v *vcf.Variant, t *cache.Transcript, result *Conseq
 			}
 		} else {
 			result.Consequence = ConsequenceInframeDeletion
-			// Check if in-frame deletion creates a stop codon at the junction
-			if indelCreatesStop(v, t, result.CDSPosition) {
+			// Check if in-frame deletion creates a stop codon at the junction.
+			// Skipped for a delins, see the insertion branch above.
+			if !isDelIns(v.Ref, v.Alt) && indelCreatesStop(v, t, result.CDSPosition) {
 				result.Consequence = ConsequenceStopGainedInframeDel
 			}
 			// Check if in-frame deletion spans the stop codon (stop_lost)
