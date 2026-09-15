@@ -246,6 +246,12 @@ func predictCodingConsequence(v *vcf.Variant, t *cache.Transcript, exon *cache.E
 	codonNum, posInCodon := CDSToCodonPosition(cdsPos)
 	result.ProteinPosition = codonNum
 	result.ProteinStart = codonNum
+	if pStart, pEnd := vepProteinSpan(v, t); pStart > 0 {
+		result.ProteinStart = pStart
+		if pEnd > pStart {
+			result.ProteinEnd = pEnd
+		}
+	}
 
 	// Handle indels
 	if v.IsIndel() {
@@ -1011,6 +1017,42 @@ func indelCreatesStop(v *vcf.Variant, t *cache.Transcript, cdsPos int64) bool {
 
 // GenomicToCDS converts a genomic position to CDS position within a transcript.
 // Returns 0 if the position is not in the CDS.
+// vepProteinSpan returns the positions VEP reports as protein_start /
+// protein_end: the codons holding the lowest and highest CDS coordinate the
+// variant touches.
+//
+// It cannot be derived from v.Pos alone. v.Pos is the lowest *genomic*
+// coordinate, which on a reverse-strand transcript maps to the *highest* CDS
+// coordinate of the span, so a reverse-strand MNV or insertion would otherwise
+// report the codon one past the one VEP names. Both ends are converted and
+// ordered in CDS space instead.
+//
+// A pure insertion replaces nothing and sits between two bases; VEP reports it
+// against the flanking pair, so the span is the anchor base and its neighbour.
+// Returns 0, 0 when neither end lands in coding sequence.
+func vepProteinSpan(v *vcf.Variant, t *cache.Transcript) (start, end int64) {
+	lo, hi := v.Pos, v.Pos+1
+	if len(v.Ref) > 0 {
+		hi = v.Pos + int64(len(v.Ref)) - 1
+	}
+	a, b := GenomicToCDS(lo, t), GenomicToCDS(hi, t)
+	switch {
+	case a < 1 && b < 1:
+		// An indel reaching out of the exon keeps whichever end is coding.
+		return 0, 0
+	case a < 1:
+		a = b
+	case b < 1:
+		b = a
+	}
+	if b < a {
+		a, b = b, a
+	}
+	start, _ = CDSToCodonPosition(a)
+	end, _ = CDSToCodonPosition(b)
+	return start, end
+}
+
 func GenomicToCDS(genomicPos int64, t *cache.Transcript) int64 {
 	if !t.IsProteinCoding() || !t.ContainsCDS(genomicPos) {
 		return 0
