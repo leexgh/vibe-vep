@@ -499,13 +499,11 @@ func predictIndelConsequence(v *vcf.Variant, t *cache.Transcript, result *Conseq
 		// In-frame
 		if diff > 0 {
 			result.Consequence = ConsequenceInframeInsertion
-			// Check if in-frame insertion creates a stop codon. Skipped for a
-			// delins: the junction scan misreads those, reporting p.H707* where
-			// VEP gives the full p.H707_H712delinsQCF, and VEP puts stop_gained
-			// on only 30 of 776 in-frame delins variants (3.9%).
-			if !isDelIns(v.Ref, v.Alt) && indelCreatesStop(v, t, result.CDSPosition) {
-				result.Consequence = ConsequenceStopGained
-			}
+			// Derive the protein change BEFORE reclassifying as stop_gained.
+			// The block below is guarded on inframe_insertion, so running the
+			// stop check first skipped it and left the delins fields empty --
+			// c.4547_4548insTTA rendered as p.K1516* rather than VEP's
+			// p.K1516delinsN*.
 			// Compute inserted amino acids via protein comparison
 			if result.CDSPosition > 0 && result.Consequence == ConsequenceInframeInsertion {
 				startPos, endPos, delAAs, insAAs := computeInframeProteinChange(v, t, result.CDSPosition)
@@ -572,6 +570,14 @@ func predictIndelConsequence(v *vcf.Variant, t *cache.Transcript, result *Conseq
 					}
 				}
 			}
+			// Now that the protein change is known, reclassify if the
+			// insertion introduced a stop. Skipped for a delins: the junction
+			// scan misreads those, reporting p.H707* where VEP gives the full
+			// p.H707_H712delinsQCF, and VEP puts stop_gained on only 30 of 776
+			// in-frame delins variants (3.9%).
+			if !isDelIns(v.Ref, v.Alt) && indelCreatesStop(v, t, result.CDSPosition) {
+				result.Consequence = ConsequenceStopGained
+			}
 		} else {
 			result.Consequence = ConsequenceInframeDeletion
 			// Check if in-frame deletion creates a stop codon at the junction.
@@ -603,7 +609,12 @@ func predictIndelConsequence(v *vcf.Variant, t *cache.Transcript, result *Conseq
 						}
 					}
 					if len(insAAs) > 0 {
+						// The junction produced new residues, so this is a
+						// delins. stop_gained,inframe_deletion renders through
+						// the stop_gained branch, which needs the flag to show
+						// the whole span (p.L288_K289delins*, not p.L288*).
 						result.InsertedAAs = insAAs
+						result.IsDelIns = true
 					}
 				}
 			}
@@ -1044,9 +1055,18 @@ func indelCreatesStop(v *vcf.Variant, t *cache.Transcript, cdsPos int64) bool {
 			break
 		}
 		if TranslateCodon(mut.Codon(pos)) == '*' {
-			// Only report if this is a NEW stop (not present in original)
-			if pos+3 <= len(t.CDSSequence) {
-				if TranslateCodon(t.CDSSequence[pos:pos+3]) == '*' {
+			// Only report if this is a NEW stop. Past the edit the mutant and
+			// the original are offset by the length difference, so comparing
+			// t.CDSSequence at the same index reads an unrelated codon and a
+			// pre-existing stop looks new -- that is how the codon-aligned
+			// in-frame deletion c.847_882del came out as p.L283* instead of
+			// p.L283_D294del.
+			origPos := pos
+			if pos >= cdsIdx {
+				origPos = pos + len(ref) - len(alt)
+			}
+			if origPos >= 0 && origPos+3 <= len(t.CDSSequence) {
+				if TranslateCodon(t.CDSSequence[origPos:origPos+3]) == '*' {
 					return false
 				}
 			}
