@@ -720,8 +720,6 @@ func computeFrameshiftDetails(v *vcf.Variant, t *cache.Transcript, cdsPos int64)
 		return 0, 0, 0, 0
 	}
 
-	cdsIdx := int(cdsPos - 1) // 0-based index in CDS
-
 	ref := v.Ref
 	alt := v.Alt
 	if t.IsReverseStrand() {
@@ -729,30 +727,12 @@ func computeFrameshiftDetails(v *vcf.Variant, t *cache.Transcript, cdsPos int64)
 		alt = ReverseComplement(alt)
 	}
 
-	// For reverse-strand variants, GenomicToCDS(v.Pos) maps the leftmost
-	// genomic position to the HIGHEST CDS index (the last ref base on the
-	// transcript).  Shift startIdx left by len(ref)-1 so that it points to
-	// the first ref base in CDS space.
-	startIdx := cdsIdx
-	if t.IsReverseStrand() && len(ref) > 1 {
-		startIdx -= len(ref) - 1
-		if startIdx < 0 {
-			startIdx = 0
-		}
-	}
-	// A pure insertion replaces nothing: the bases go AFTER the anchor base on
-	// the forward strand, so the split belongs one position further along.
-	// Splicing at the anchor instead inserts one base early, which in a repeat
-	// run yields a mutant that is NOT the 3'-shifted one and makes the scan
-	// below report a first-changed codon several residues too early. BRCA2
+	// Splicing at the raw anchor inserts one base early, which in a repeat run
+	// yields a mutant that is NOT the 3'-shifted one and makes the scan below
+	// report a first-changed codon several residues too early: BRCA2
 	// c.2090_2091dup came out as p.E696Kfs*35 where the protein first differs
-	// at 698 (p.L698Nfs*33): residue 696 is Glu in both reference and mutant.
-	if len(ref) == 0 && t.IsForwardStrand() {
-		startIdx++
-		if startIdx > len(t.CDSSequence) {
-			startIdx = len(t.CDSSequence)
-		}
-	}
+	// at 698 (p.L698Nfs*33), residue 696 being Glu in both.
+	startIdx := cdsEditIndex(cdsPos, ref, t)
 
 	endIdx := startIdx + len(ref)
 	if endIdx > len(t.CDSSequence) {
@@ -842,24 +822,7 @@ func computeInframeProteinChange(v *vcf.Variant, t *cache.Transcript, cdsPos int
 	// transcript).  For any multi-base ref we must shift cdsIdx left by
 	// len(ref)-1 so that it points to the FIRST ref base.  This applies to
 	// insertions, deletions, and complex substitutions uniformly.
-	cdsIdx := int(cdsPos - 1)
-	if t.IsReverseStrand() && len(ref) > 1 {
-		cdsIdx -= len(ref) - 1
-		if cdsIdx < 0 {
-			cdsIdx = 0
-		}
-	}
-	// A pure insertion replaces nothing: on the forward strand the new bases go
-	// AFTER the anchor base, so the split point is one further along. Modelling
-	// it before the anchor mis-frames the codon -- inserting CAG into a poly-Q
-	// run came out as p.Q222delinsHR instead of a duplicated Q. This mirrors the
-	// same correction already made in computeFrameshiftDetails.
-	if len(ref) == 0 && t.IsForwardStrand() {
-		cdsIdx++
-		if cdsIdx > len(t.CDSSequence) {
-			cdsIdx = len(t.CDSSequence)
-		}
-	}
+	cdsIdx := cdsEditIndex(cdsPos, ref, t)
 
 	refEndIdx := cdsIdx + len(ref)
 	if refEndIdx > len(t.CDSSequence) {
@@ -1005,8 +968,6 @@ func indelCreatesStop(v *vcf.Variant, t *cache.Transcript, cdsPos int64) bool {
 		return false
 	}
 
-	cdsIdx := int(cdsPos - 1) // 0-based index in CDS
-
 	ref := v.Ref
 	alt := v.Alt
 	if t.IsReverseStrand() {
@@ -1014,25 +975,10 @@ func indelCreatesStop(v *vcf.Variant, t *cache.Transcript, cdsPos int64) bool {
 		alt = ReverseComplement(alt)
 	}
 
-	// Anchor corrections, matching computeInframeProteinChange. Without them the
-	// mutant CDS is built from the wrong bases and reports a stop that does not
-	// exist: the in-frame deletion c.4299_4301del came out as p.V1434* instead
-	// of p.V1434del.
-	if t.IsReverseStrand() && len(ref) > 1 {
-		// GenomicToCDS maps the leftmost genomic base to the HIGHEST CDS index,
-		// so for a multi-base ref cdsIdx names the last affected base.
-		cdsIdx -= len(ref) - 1
-		if cdsIdx < 0 {
-			cdsIdx = 0
-		}
-	}
-	if len(ref) == 0 && t.IsForwardStrand() {
-		// A pure insertion goes after the anchor base on the forward strand.
-		cdsIdx++
-		if cdsIdx > len(t.CDSSequence) {
-			cdsIdx = len(t.CDSSequence)
-		}
-	}
+	// Without the anchor corrections the mutant CDS is built from the wrong
+	// bases and reports a stop that does not exist: the in-frame deletion
+	// c.4299_4301del came out as p.V1434* instead of p.V1434del.
+	cdsIdx := cdsEditIndex(cdsPos, ref, t)
 
 	endIdx := cdsIdx + len(ref)
 	if endIdx > len(t.CDSSequence) {
@@ -1110,6 +1056,38 @@ func vepProteinSpan(v *vcf.Variant, t *cache.Transcript) (start, end int64) {
 	start, _ = CDSToCodonPosition(a)
 	end, _ = CDSToCodonPosition(b)
 	return start, end
+}
+
+// cdsEditIndex returns the 0-based CDSSequence index at which a variant's edit
+// begins, from the CDS position GenomicToCDS produced for v.Pos.
+//
+// Two corrections are needed, and getting either wrong mis-frames the codon and
+// yields a mutant protein the variant does not produce. Both have been fixed
+// separately in three call sites before this helper existed, so keep new
+// mutant-CDS construction on this function rather than re-deriving it:
+//
+//   - On a reverse-strand transcript GenomicToCDS maps the leftmost genomic
+//     base to the HIGHEST CDS index, so for a multi-base ref the position names
+//     the LAST affected base and must be walked back len(ref)-1.
+//   - A pure insertion replaces nothing; on the forward strand its bases belong
+//     AFTER the anchor base, one position further along.
+//
+// ref must already be oriented to the coding strand.
+func cdsEditIndex(cdsPos int64, ref string, t *cache.Transcript) int {
+	idx := int(cdsPos - 1)
+	if t.IsReverseStrand() && len(ref) > 1 {
+		idx -= len(ref) - 1
+	}
+	if len(ref) == 0 && t.IsForwardStrand() {
+		idx++
+	}
+	if idx < 0 {
+		idx = 0
+	}
+	if idx > len(t.CDSSequence) {
+		idx = len(t.CDSSequence)
+	}
+	return idx
 }
 
 // GenomicToCDS converts a genomic position to CDS position within a transcript.
