@@ -69,6 +69,20 @@ func PredictConsequence(v *vcf.Variant, t *cache.Transcript) *ConsequenceResult 
 
 	// Check if in exon
 	exon := t.FindExon(v.Pos)
+	if exon == nil && len(v.Ref) == 0 {
+		// A pure insertion sits BETWEEN two bases and v.Pos names only one of
+		// them; at an exon/intron junction the other may be the coding one. On
+		// a reverse-strand transcript v.Pos is the intronic flank, so the
+		// variant looked purely intronic and was called splice_donor_variant.
+		// VEP treats it as an exonic change plus splice_region_variant --
+		// c.990_990+1insT is frameshift_variant / p.R331*, not p.X330_splice --
+		// because inserting between the two leaves the essential donor
+		// dinucleotide intact. A deletion removes those bases and genuinely
+		// does break the site, so this applies to insertions only.
+		if other := t.FindExon(v.Pos + 1); other != nil {
+			exon = other
+		}
+	}
 	if exon == nil {
 		// Intronic - check splice sites (±1-2bp), then splice region (±3-8bp)
 		// For indels, check the entire span for splice site overlap
@@ -233,8 +247,10 @@ func PredictConsequence(v *vcf.Variant, t *cache.Transcript) *ConsequenceResult 
 				result.HGVSp = FormatHGVSp(result)
 			}
 		}
-	} else if isSpliceRegion(v.Pos, t) {
-		// Append splice_region_variant if near exon boundary
+	} else if isSpliceRegion(v.Pos, t) || (len(v.Ref) == 0 && isSpliceRegion(v.Pos+1, t)) {
+		// Append splice_region_variant if near an exon boundary. A pure
+		// insertion is checked on both flanks, since at a junction only one of
+		// them is the exonic side.
 		result.Consequence = appendSpliceRegion(result.Consequence)
 	}
 
@@ -245,6 +261,19 @@ func PredictConsequence(v *vcf.Variant, t *cache.Transcript) *ConsequenceResult 
 func predictCodingConsequence(v *vcf.Variant, t *cache.Transcript, exon *cache.Exon, result *ConsequenceResult) *ConsequenceResult {
 	// Calculate CDS position
 	cdsPos := GenomicToCDS(v.Pos, t)
+	if cdsPos < 1 && len(v.Ref) == 0 {
+		// Junction insertion (see PredictConsequence): anchor on the coding
+		// flank. The +-1 restores the usual convention that the anchor names
+		// the base the insertion follows in CODING order, which is the other
+		// flank once we cross the junction.
+		if p := GenomicToCDS(v.Pos+1, t); p > 0 {
+			if t.IsForwardStrand() {
+				cdsPos = p - 1
+			} else {
+				cdsPos = p + 1
+			}
+		}
+	}
 	if cdsPos < 1 {
 		result.Consequence = ConsequenceIntronVariant
 		result.Impact = GetImpact(result.Consequence)
