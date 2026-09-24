@@ -217,8 +217,13 @@ func PredictConsequence(v *vcf.Variant, t *cache.Transcript) *ConsequenceResult 
 	// Variant is in CDS - calculate coding effect
 	result = predictCodingConsequence(v, t, exon, result)
 
-	// For indels, check for higher-impact consequences
-	if v.IsIndel() && len(v.Ref) > 1 {
+	// For indels, check for higher-impact consequences. The test is whether the
+	// variant REMOVES start-codon bases, so it keys on deleted length rather
+	// than ref length: a single-base deletion counts (c.1del is start_lost /
+	// p.M1? to VEP, but the old len(ref)>1 guard skipped it and left a plain
+	// frameshift, p.M1*), while an insertion written VCF-style with an anchor
+	// base (ref=G, alt=GG) deletes nothing and must not.
+	if v.IsIndel() && len(v.Ref) > len(v.Alt) {
 		indelEnd := v.Pos + int64(len(v.Ref)) - 1
 		// Check if indel spans the start codon → start_lost
 		startCodonStart, startCodonEnd := t.CDSStart, t.CDSStart+2
