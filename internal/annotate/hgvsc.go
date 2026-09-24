@@ -126,29 +126,37 @@ func formatHGVScInsertion(v *vcf.Variant, t *cache.Transcript, prefix string, re
 			unshiftedAnchor+1, unshiftedAnchor, string(seq))
 		seqLen := len(seq)
 
-		// VEP only describes an insertion as a duplication when the 3' shift
-		// actually moved it. Across a VEP111 MSK-IMPACT MAF, all 10,025 "dup"
-		// descriptions carry hgvs_offset >= 1 and none has offset 0, while
-		// 18,227 of 18,523 "ins" descriptions have offset 0 -- including
-		// insertions inside a homopolymer where the preceding base does match
-		// (c.1663_1664insC in a CCCCC run). Strict HGVS would call those a
-		// duplication; VEP does not, and vep111 is the reference here.
-		if result.HGVSOffset > 0 {
-			// Check dup: inserted bases match preceding bases at shifted position.
-			// Go optimizes string([]byte) == string comparisons to avoid allocation.
-			dupStart := shiftedIdx - seqLen + 1
-			if dupStart >= 0 && shiftedIdx+1 <= len(t.CDSSequence) &&
-				t.CDSSequence[dupStart:shiftedIdx+1] == string(seq) {
-				return cdsPosRangeStr(dupStart+1, shiftedIdx+1, "dup")
-			}
+		// HGVS defines insertion and duplication as mutually exclusive: an
+		// insertion is a change "where the insertion is not a copy of a sequence
+		// immediately 5'", and a duplication is a copy inserted "directly 3' of
+		// the original copy of that sequence". So whenever the inserted bases are
+		// a tandem copy of what precedes them, "ins" is not a valid description.
+		//
+		// This deliberately diverges from Ensembl VEP, which only writes "dup"
+		// when the 3' shift moved the variant. Across a VEP111 MSK-IMPACT MAF
+		// 6,769 of VEP's 8,124 "ins" descriptions are tandem copies by the
+		// reference sequence -- e.g. c.1663_1664insC inserted into a run of seven
+		// C's, which HGVS requires be written c.1663dup. VEP also contradicts
+		// itself on 541 rows, writing "ins" at the CDS level and "dup" at the
+		// protein level for the same variant (ASXL2 c.353_354insCAG / p.S117dup).
+		// Matching VEP here would cost nothing in accuracy but would emit
+		// descriptions that fail to match ClinVar and LOVD, which normalize to
+		// "dup". Concordance with vep111 on HGVSc is ~1.4pp lower as a result.
 
-			// Check dup: inserted bases match following bases at shifted position
-			afterStart := shiftedIdx + 1
-			afterEnd := afterStart + seqLen
-			if afterStart >= 0 && afterEnd <= len(t.CDSSequence) &&
-				t.CDSSequence[afterStart:afterEnd] == string(seq) {
-				return cdsPosRangeStr(afterStart+1, afterEnd, "dup")
-			}
+		// Check dup: inserted bases match preceding bases at shifted position.
+		// Go optimizes string([]byte) == string comparisons to avoid allocation.
+		dupStart := shiftedIdx - seqLen + 1
+		if dupStart >= 0 && shiftedIdx+1 <= len(t.CDSSequence) &&
+			t.CDSSequence[dupStart:shiftedIdx+1] == string(seq) {
+			return cdsPosRangeStr(dupStart+1, shiftedIdx+1, "dup")
+		}
+
+		// Check dup: inserted bases match following bases at shifted position
+		afterStart := shiftedIdx + 1
+		afterEnd := afterStart + seqLen
+		if afterStart >= 0 && afterEnd <= len(t.CDSSequence) &&
+			t.CDSSequence[afterStart:afterEnd] == string(seq) {
+			return cdsPosRangeStr(afterStart+1, afterEnd, "dup")
 		}
 
 		// Plain insertion at shifted CDS position

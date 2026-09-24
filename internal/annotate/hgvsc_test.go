@@ -151,17 +151,16 @@ func TestGenomicToHGVScPos_FivePrimeUTR(t *testing.T) {
 
 func TestFormatHGVSc_DupPrecedingBase(t *testing.T) {
 	// Test: insertion that duplicates the preceding (anchor) base, where no
-	// 3' shift is possible. VEP writes this as an insertion, not a duplication
-	// -- it reserves "dup" for variants the shift actually moved. See the note
-	// on TestHGVS_Dup_SingleBase for the counts behind that. Duplications that
-	// do shift are still reported as dup (TestHGVS_Dup_WithThreePrimeShift).
+	// 3' shift is possible. HGVS requires dup regardless of whether a shift
+	// occurred, because the inserted base is a copy of the sequence immediately
+	// 5'. VEP writes c.3_4insG here; vibe-vep intentionally does not follow it.
 	transcript := createDupTestTranscript()
 
 	v := &vcf.Variant{Chrom: "1", Pos: 1002, Ref: "G", Alt: "GG"}
 	result := PredictConsequence(v, transcript)
 	hgvsc := FormatHGVSc(v, transcript, result)
 
-	assert.Equal(t, "c.3_4insG", hgvsc)
+	assert.Equal(t, "c.3dup", hgvsc)
 }
 
 func TestFormatHGVSc_DupFollowingBase(t *testing.T) {
