@@ -68,6 +68,7 @@ func PredictConsequence(v *vcf.Variant, t *cache.Transcript) *ConsequenceResult 
 	}
 
 	// Check if in exon
+	junctionInsertion := false
 	exon := t.FindExon(v.Pos)
 	if exon == nil && len(v.Ref) == 0 {
 		// A pure insertion sits BETWEEN two bases and v.Pos names only one of
@@ -81,6 +82,7 @@ func PredictConsequence(v *vcf.Variant, t *cache.Transcript) *ConsequenceResult 
 		// does break the site, so this applies to insertions only.
 		if other := t.FindExon(v.Pos + 1); other != nil {
 			exon = other
+			junctionInsertion = true
 		}
 	}
 	if exon == nil {
@@ -130,8 +132,13 @@ func PredictConsequence(v *vcf.Variant, t *cache.Transcript) *ConsequenceResult 
 		return result
 	}
 
-	// Set exon number
-	result.ExonNumber = formatExonNumber(exon.Number, len(t.Exons))
+	// Set exon number. A junction insertion spans the exon/intron boundary
+	// rather than sitting inside the exon, and VEP leaves Exon_Number empty for
+	// those, so do not attribute it to the exon we borrowed for the coding
+	// coordinates.
+	if !junctionInsertion {
+		result.ExonNumber = formatExonNumber(exon.Number, len(t.Exons))
+	}
 
 	// Check if transcript is protein coding
 	if !t.IsProteinCoding() {
