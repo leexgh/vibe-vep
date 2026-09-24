@@ -32,6 +32,11 @@ type Transcript struct {
 	CDSStart        int64  // CDS start (genomic, 1-based), 0 if non-coding
 	CDSEnd          int64  // CDS end (genomic, 1-based), 0 if non-coding
 	CDSSequence     string // Coding DNA sequence (loaded on demand)
+	// CDSStartOffset is how many bases of the first codon are missing from a
+	// 5'-incomplete CDS (GENCODE cds_start_NF): 0, 1 or 2. VEP numbers c.1 from
+	// the first base of that notional complete codon, so CDSSequence is padded
+	// by this many bases and CDS positions are shifted to match.
+	CDSStartOffset  int
 	UTR3Sequence    string // 3'UTR sequence immediately following CDSSequence (for stop scanning)
 	ProteinLength   int    // Protein length in amino acids (persisted, unlike ProteinSequence)
 	ProteinSequence string // Translated protein sequence (loaded on demand)

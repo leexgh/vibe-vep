@@ -1015,8 +1015,6 @@ func indelCreatesStop(v *vcf.Variant, t *cache.Transcript, cdsPos int64) bool {
 	return false
 }
 
-// GenomicToCDS converts a genomic position to CDS position within a transcript.
-// Returns 0 if the position is not in the CDS.
 // vepProteinSpan returns the positions VEP reports as protein_start /
 // protein_end: the codons holding the lowest and highest CDS coordinate the
 // variant touches.
@@ -1053,7 +1051,23 @@ func vepProteinSpan(v *vcf.Variant, t *cache.Transcript) (start, end int64) {
 	return start, end
 }
 
+// GenomicToCDS converts a genomic position to CDS position within a transcript.
+// Returns 0 if the position is not in the CDS.
+//
+// The result carries CDSStartOffset, so on a 5'-incomplete transcript it is the
+// position VEP reports -- c.1 being the first base of the notional complete
+// first codon -- and remains a valid index into the padded CDSSequence.
 func GenomicToCDS(genomicPos int64, t *cache.Transcript) int64 {
+	pos := genomicToCDSRaw(genomicPos, t)
+	if pos < 1 {
+		return 0
+	}
+	return pos + int64(t.CDSStartOffset)
+}
+
+// genomicToCDSRaw counts coding bases from the first annotated CDS base,
+// ignoring any missing 5' partial codon.
+func genomicToCDSRaw(genomicPos int64, t *cache.Transcript) int64 {
 	if !t.IsProteinCoding() || !t.ContainsCDS(genomicPos) {
 		return 0
 	}
@@ -1116,6 +1130,12 @@ func GenomicToCDS(genomicPos int64, t *cache.Transcript) int64 {
 // This is the reverse of GenomicToCDS.
 func CDSToGenomic(cdsPos int64, t *cache.Transcript) int64 {
 	if !t.IsProteinCoding() || cdsPos < 1 {
+		return 0
+	}
+	// Undo the 5'-incomplete shift applied by GenomicToCDS. Positions inside the
+	// padded first codon have no genomic counterpart.
+	cdsPos -= int64(t.CDSStartOffset)
+	if cdsPos < 1 {
 		return 0
 	}
 
