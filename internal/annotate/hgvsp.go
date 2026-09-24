@@ -89,6 +89,35 @@ func FormatHGVSp(result *ConsequenceResult) string {
 		return string(buf[:n])
 
 	case ConsequenceStopGained:
+		// A multi-codon MNV that introduces a stop alters more than the single
+		// residue, and VEP describes the whole span rather than collapsing it
+		// to a nonsense call: c.1125_1126delinsTT is p.K375_Q376delinsN* and
+		// c.1284_1285inv is p.Y428_Y429delins*, not p.K375* / p.Y428*.
+		// predictMNVConsequence already recorded the span on the delins fields.
+		if result.IsDelIns && len(result.InsertedAAs) > 0 {
+			n += copy(buf[n:], "p.")
+			if result.RefAA != 0 {
+				n += copy(buf[n:], aaThree(result.RefAA))
+			}
+			n += putInt64(buf[n:], pos)
+			if result.ProteinEndPosition > result.ProteinPosition && result.EndAA != 0 {
+				buf[n] = '_'
+				n++
+				n += copy(buf[n:], aaThree(result.EndAA))
+				n += putInt64(buf[n:], result.ProteinEndPosition)
+			}
+			n += copy(buf[n:], "delins")
+			// Nothing is translated past a stop, so c.1284_1285inv is
+			// p.Y428_Y429delins*, not p.Y428_Y429delins*N.
+			ins := result.InsertedAAs
+			for i := 0; i < len(ins); i++ {
+				if ins[i] == '*' {
+					ins = ins[:i+1]
+					break
+				}
+			}
+			return string(buf[:n]) + formatAASequence(ins)
+		}
 		// p.Xxx###Ter
 		n += copy(buf[n:], "p.")
 		n += copy(buf[n:], aaThree(result.RefAA))

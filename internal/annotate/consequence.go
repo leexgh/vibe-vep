@@ -1003,6 +1003,26 @@ func indelCreatesStop(v *vcf.Variant, t *cache.Transcript, cdsPos int64) bool {
 		alt = ReverseComplement(alt)
 	}
 
+	// Anchor corrections, matching computeInframeProteinChange. Without them the
+	// mutant CDS is built from the wrong bases and reports a stop that does not
+	// exist: the in-frame deletion c.4299_4301del came out as p.V1434* instead
+	// of p.V1434del.
+	if t.IsReverseStrand() && len(ref) > 1 {
+		// GenomicToCDS maps the leftmost genomic base to the HIGHEST CDS index,
+		// so for a multi-base ref cdsIdx names the last affected base.
+		cdsIdx -= len(ref) - 1
+		if cdsIdx < 0 {
+			cdsIdx = 0
+		}
+	}
+	if len(ref) == 0 && t.IsForwardStrand() {
+		// A pure insertion goes after the anchor base on the forward strand.
+		cdsIdx++
+		if cdsIdx > len(t.CDSSequence) {
+			cdsIdx = len(t.CDSSequence)
+		}
+	}
+
 	endIdx := cdsIdx + len(ref)
 	if endIdx > len(t.CDSSequence) {
 		endIdx = len(t.CDSSequence)
