@@ -296,6 +296,15 @@ func formatHGVScDeletion(v *vcf.Variant, t *cache.Transcript, prefix string, ref
 		return cdsPosRangeStr(sStart+1, sEnd+1, "del")
 	}
 
+	// Before falling back, a purely intronic pure deletion may still 3'-shift
+	// across the junction into the exon (see shiftedIntronicDelCDS).
+	if len(extraAlt) == 0 {
+		if sStart, sEnd, k := shiftedIntronicDelCDS(v, t); sStart > 0 {
+			result.HGVSOffset = k
+			return cdsPosRangeStr(int(sStart), int(sEnd), "del")
+		}
+	}
+
 	// Fall back to genomic-based positions for intronic/UTR/non-coding deletions.
 	// Convert extra alt bases to coding strand (only needed for fallback path).
 	codingExtraAlt := extraAlt
@@ -316,6 +325,57 @@ func formatHGVScDeletion(v *vcf.Variant, t *cache.Transcript, prefix string, ref
 	}
 	delEndStr := genomicToHGVScPos(delEndGenomic, t)
 	return prefix + delStartStr + "_" + delEndStr + "del"
+}
+
+// shiftedIntronicDelCDS handles a pure deletion lying entirely within an intron
+// immediately 5' (on the coding strand) of a coding exon, where the deleted
+// bases keep repeating into that exon. HGVS assigns the most 3' position
+// possible, so such a deletion slides across the splice junction: POLD1 deletes
+// a G from the last intron base of an exon that opens GGGGGG, and VEP reports
+// c.2959del with hgvs_offset 6, not c.2954-1del.
+//
+// No intron sequence is needed, which matters because vibe-vep has none. The
+// deleted bases come from the variant itself and the run continues in
+// CDSSequence, so sliding k bases is allowed while the exon base at j matches
+// deleted[j%L]. Once k reaches L the deletion lies wholly inside the exon;
+// below that it still straddles the junction and HGVS keeps the intronic form.
+//
+// Returns the 1-based CDS range it lands on and the shift distance, or zeros.
+func shiftedIntronicDelCDS(v *vcf.Variant, t *cache.Transcript) (cdsStart, cdsEnd int64, shift int) {
+	refLen := len(v.Ref)
+	if refLen == 0 || len(v.Alt) != 0 || len(t.CDSSequence) == 0 || !t.IsProteinCoding() {
+		return 0, 0, 0
+	}
+	delStartGenomic := v.Pos
+	delEndGenomic := v.Pos + int64(refLen) - 1
+	if GenomicToCDS(delStartGenomic, t) > 0 || GenomicToCDS(delEndGenomic, t) > 0 {
+		return 0, 0, 0 // touches coding sequence; the exonic path handles it
+	}
+
+	delSeq := v.Ref
+	next := delEndGenomic + 1
+	if t.IsReverseStrand() {
+		delSeq = ReverseComplement(delSeq)
+		next = delStartGenomic - 1
+	}
+	exonStart := GenomicToCDS(next, t)
+	if exonStart < 1 {
+		return 0, 0, 0
+	}
+
+	k := 0
+	for {
+		idx := int(exonStart) - 1 + k
+		if idx >= len(t.CDSSequence) || t.CDSSequence[idx] != delSeq[k%refLen] {
+			break
+		}
+		k++
+	}
+	if k < refLen {
+		return 0, 0, 0
+	}
+	cdsStart = exonStart + int64(k-refLen)
+	return cdsStart, cdsStart + int64(refLen) - 1, k
 }
 
 // cdsPosRangeStr builds a CDS position string like "c.34del", "c.34_36del",

@@ -98,7 +98,17 @@ func PredictConsequence(v *vcf.Variant, t *cache.Transcript) *ConsequenceResult 
 		// compute p.X###_splice notation using the nearest exon boundary.
 		if t.IsProteinCoding() &&
 			(result.Consequence == ConsequenceSpliceDonor || result.Consequence == ConsequenceSpliceAcceptor) {
-			if pos := nearestSpliceBoundaryProteinPos(v.Pos, t); pos > 0 {
+			pos := int64(0)
+			// A deletion that 3'-shifts across the junction is named for the
+			// codon it lands on, not the exon boundary: POLD1 c.2959del is
+			// p.X987_splice where the boundary codon is 985.
+			if sStart, _, _ := shiftedIntronicDelCDS(v, t); sStart > 0 {
+				pos, _ = CDSToCodonPosition(sStart)
+			}
+			if pos == 0 {
+				pos = nearestSpliceBoundaryProteinPos(v.Pos, t)
+			}
+			if pos > 0 {
 				result.ProteinPosition = pos
 				result.HGVSp = FormatHGVSp(result)
 			}
