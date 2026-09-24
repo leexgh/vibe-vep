@@ -828,6 +828,17 @@ func computeInframeProteinChange(v *vcf.Variant, t *cache.Transcript, cdsPos int
 			cdsIdx = 0
 		}
 	}
+	// A pure insertion replaces nothing: on the forward strand the new bases go
+	// AFTER the anchor base, so the split point is one further along. Modelling
+	// it before the anchor mis-frames the codon -- inserting CAG into a poly-Q
+	// run came out as p.Q222delinsHR instead of a duplicated Q. This mirrors the
+	// same correction already made in computeFrameshiftDetails.
+	if len(ref) == 0 && t.IsForwardStrand() {
+		cdsIdx++
+		if cdsIdx > len(t.CDSSequence) {
+			cdsIdx = len(t.CDSSequence)
+		}
+	}
 
 	refEndIdx := cdsIdx + len(ref)
 	if refEndIdx > len(t.CDSSequence) {
