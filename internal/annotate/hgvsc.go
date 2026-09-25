@@ -289,10 +289,14 @@ func formatHGVScDeletion(v *vcf.Variant, t *cache.Transcript, prefix string, ref
 		// A deletion whose 3' end reaches the exon edge may keep shifting into
 		// the intron (see deletionShiftIntoIntron).
 		if sc, ee, _, k, ok := deletionShiftIntoIntron(v, t); ok {
-			result.HGVSOffset = int(sc-delStartCDS) + 0
+			result.HGVSOffset = int(sc - delStartCDS)
 			if result.HGVSOffset < 0 {
 				result.HGVSOffset = 0
 			}
+			// Codons are still reported, and at the UNSHIFTED position: VEP
+			// gives aaG/aa for PTEN c.801+1del, the codon around c.801. Leaving
+			// this out blanked the column for every shifted row.
+			result.CodonChange = formatCodonChangeCDS(t.CDSSequence, delStartCDS, delEndCDS, "")
 			return formatDeletionAcrossDonor(sc, ee, k)
 		}
 
