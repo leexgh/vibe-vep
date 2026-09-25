@@ -121,9 +121,17 @@ func PredictConsequence(v *vcf.Variant, t *cache.Transcript) *ConsequenceResult 
 			pos := int64(0)
 			// A deletion that 3'-shifts across the junction is named for the
 			// codon it lands on, not the exon boundary: POLD1 c.2959del is
-			// p.X987_splice where the boundary codon is 985.
+			// p.X987_splice where the boundary codon is 985. The same applies
+			// to a deletion that starts in the exon and runs into the intron,
+			// which shifts using the stored flank (MET c.3016_3028+7del is
+			// p.X1006_splice, not p.X1005_splice).
 			if sStart, _, _ := shiftedIntronicDelCDS(v, t); sStart > 0 {
 				pos, _ = CDSToCodonPosition(sStart)
+			}
+			if pos == 0 {
+				if _, ns := straddlingDeletionShift(v, t); ns > 0 {
+					pos, _ = CDSToCodonPosition(ns)
+				}
 			}
 			if pos == 0 {
 				pos = nearestSpliceBoundaryProteinPos(v.Pos, t)

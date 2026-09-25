@@ -436,6 +436,15 @@ func loadFromGTFFASTA(logger *zap.Logger, c *cache.Cache, gtfPath, fastaPath, ca
 	start := time.Now()
 	loader := cache.NewGENCODELoader(gtfPath, fastaPath)
 
+	// Optional: a genomic FASTA sitting beside the GENCODE files supplies the
+	// intron flanks (see cache.IntronFlankBases). It is read at prepare time
+	// only and never shipped; without it the flanks stay empty and a deletion
+	// simply will not 3'-shift across a splice boundary.
+	if g := findGenomeFASTA(filepath.Dir(fastaPath)); g != "" {
+		logger.Info("loading intron flanks from genome", zap.String("path", g))
+		loader.SetGenomePath(g)
+	}
+
 	if canonicalPath != "" {
 		logger.Info("loading biomart canonicals", zap.String("path", canonicalPath))
 		mskOverrides, ensOverrides, entrezMap, err := cache.LoadBiomartCanonicals(canonicalPath)
@@ -535,4 +544,14 @@ func loadGenomicIndex(logger *zap.Logger, cacheDir, assembly string) (*genomicin
 	}
 
 	return genomicindex.NewSource(store, "1.0"), nil
+}
+
+// findGenomeFASTA locates an optional genomic FASTA next to the GENCODE files.
+func findGenomeFASTA(dir string) string {
+	for _, pat := range []string{"*.genome.fa.gz", "*.dna.primary_assembly.fa.gz", "*.genome.fa"} {
+		if m, err := filepath.Glob(filepath.Join(dir, pat)); err == nil && len(m) > 0 {
+			return m[0]
+		}
+	}
+	return ""
 }

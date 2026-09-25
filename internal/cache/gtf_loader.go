@@ -391,6 +391,15 @@ type GENCODELoader struct {
 	ensCanonicalOverrides  CanonicalOverrides
 	entrezGeneIDs          GeneEntrezMap
 	refSeqIDs              map[string][]string
+	genomePath             string
+}
+
+// SetGenomePath supplies a genomic FASTA used only to copy short intron windows
+// around each coding exon into the cache (see IntronFlankBases). The genome
+// itself is never retained or shipped; without it those flanks stay empty and
+// deletions simply do not shift across a splice boundary.
+func (l *GENCODELoader) SetGenomePath(path string) {
+	l.genomePath = path
 }
 
 // NewGENCODELoader creates a loader for GENCODE GTF + FASTA files.
@@ -492,6 +501,18 @@ func (l *GENCODELoader) Load(c *Cache) error {
 					t.UTR3Sequence = extended[rawCDSLen:]
 				}
 			}
+		}
+	}
+
+	// Copy the intron flanks of coding exons out of the genomic FASTA. Done
+	// last: it needs the exon CDS portions computed above.
+	if l.genomePath != "" {
+		byChrom := make(map[string][]*Transcript)
+		for _, chrom := range c.Chromosomes() {
+			byChrom[chrom] = c.FindTranscriptsByChrom(chrom)
+		}
+		if err := NewGenomeFlankLoader(l.genomePath).Attach(byChrom); err != nil {
+			return fmt.Errorf("load intron flanks: %w", err)
 		}
 	}
 

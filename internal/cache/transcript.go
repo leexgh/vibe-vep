@@ -52,6 +52,12 @@ type Exon struct {
 	CDSStart int64 // CDS portion start, 0 if entirely non-coding
 	CDSEnd   int64 // CDS portion end, 0 if entirely non-coding
 	Frame    int   // Reading frame (0, 1, or 2), -1 if non-coding
+	// IntronBefore/IntronAfter hold up to IntronFlankBases of the adjacent
+	// intron in CODING orientation, empty for non-coding exons. They exist so
+	// a deletion at an exon edge can still be 3'-shifted past the boundary;
+	// see the note on IntronFlankBases.
+	IntronBefore string
+	IntronAfter  string
 }
 
 // BuildCDSIndex pre-computes CDS region offsets and exonic base counts

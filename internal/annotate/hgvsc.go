@@ -312,6 +312,20 @@ func formatHGVScDeletion(v *vcf.Variant, t *cache.Transcript, prefix string, ref
 		codingExtraAlt = ReverseComplement(extraAlt)
 	}
 
+	// A deletion running from an exon into the following intron can still be
+	// 3'-shifted, using the stored intron flank (see straddlingDeletionShift).
+	if len(extraAlt) == 0 {
+		if k, _ := straddlingDeletionShift(v, t); k > 0 {
+			d := int64(k)
+			if t.IsReverseStrand() {
+				d = -d
+			}
+			delStartGenomic += d
+			delEndGenomic += d
+			result.HGVSOffset = k
+		}
+	}
+
 	delStartStr := genomicToHGVScPos(delStartGenomic, t)
 	if len(codingExtraAlt) > 0 {
 		if delStartGenomic == delEndGenomic {
@@ -325,6 +339,72 @@ func formatHGVScDeletion(v *vcf.Variant, t *cache.Transcript, prefix string, ref
 	}
 	delEndStr := genomicToHGVScPos(delEndGenomic, t)
 	return prefix + delStartStr + "_" + delEndStr + "del"
+}
+
+// straddlingDeletionShift computes how far a pure deletion running from an exon
+// into the following intron may be shifted 3'.
+//
+// HGVS places a deletion as far 3' as possible. Each step is allowed when the
+// base leaving the front of the deleted span equals the base entering at the
+// back; here the front is exonic and the back is intronic, so the test needs
+// intron sequence. That is what Exon.IntronAfter carries.
+//
+//	MET  vibe c.3015_3028+6del -> VEP c.3016_3028+7del  (offset 1)
+//	B2M  vibe c.59_67+237del   -> VEP c.61_67+239del    (offset 2)
+//
+// Returns the shift distance and the CDS position the deletion starts at after
+// shifting. Returns 0 when the shape does not apply or no flank is stored, in
+// which case the caller keeps the unshifted description.
+func straddlingDeletionShift(v *vcf.Variant, t *cache.Transcript) (shift int, newStartCDS int64) {
+	refLen := len(v.Ref)
+	if refLen == 0 || len(v.Alt) != 0 || len(t.CDSSequence) == 0 || !t.IsProteinCoding() {
+		return 0, 0
+	}
+	lo, hi := v.Pos, v.Pos+int64(refLen)-1
+
+	// Orient the span: codingStart is the 5' end of the deletion on the coding
+	// strand, codingEnd the 3' end.
+	codingStart, codingEnd := lo, hi
+	if t.IsReverseStrand() {
+		codingStart, codingEnd = hi, lo
+	}
+	startCDS := GenomicToCDS(codingStart, t)
+	if startCDS < 1 || GenomicToCDS(codingEnd, t) > 0 {
+		return 0, 0 // not a straddle: either the 5' end is intronic or the 3' end is still coding
+	}
+	exon := t.FindExon(codingStart)
+	if exon == nil {
+		return 0, 0
+	}
+
+	// How many intronic bases the deletion already covers.
+	exonCodingEnd := exon.End
+	if t.IsReverseStrand() {
+		exonCodingEnd = exon.Start
+	}
+	tail := codingEnd - exonCodingEnd
+	if t.IsReverseStrand() {
+		tail = exonCodingEnd - codingEnd
+	}
+	if tail < 1 {
+		return 0, 0
+	}
+
+	flank := exon.IntronAfter
+	cds := t.CDSSequence
+	k := 0
+	for {
+		fi := int(tail) + k // 0-based index of the base just past the deletion
+		ci := int(startCDS) - 1 + k
+		if fi >= len(flank) || ci >= len(cds) || flank[fi] != cds[ci] {
+			break
+		}
+		k++
+	}
+	if k == 0 {
+		return 0, 0
+	}
+	return k, startCDS + int64(k)
 }
 
 // shiftedIntronicDelCDS handles a pure deletion lying entirely within an intron
