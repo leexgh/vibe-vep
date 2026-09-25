@@ -71,6 +71,7 @@ type Annotation struct {
 	CDSPosition        int64             // Position in CDS, 0 if not in CDS
 	ProteinPosition    int64             // Amino acid position, 0 if not in CDS
 	AminoAcidChange    string            // e.g., "G12C", empty if not missense
+	AminoAcidsVEP      string            // raw VEP amino_acids when it is not a ref/alt pair
 	CodonChange        string            // e.g., "GGT/TGT", empty if not coding
 	IsCanonicalMSK     bool              // Annotation on MSK canonical transcript
 	IsCanonicalEnsembl bool              // Annotation on Ensembl canonical transcript

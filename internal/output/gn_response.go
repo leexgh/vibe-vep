@@ -82,7 +82,7 @@ func MarshalGNAnnotation(input string, v *vcf.Variant, anns []*annotate.Annotati
 			ConsequenceTerms:    splitConsequence(ann.Consequence),
 			Impact:              ann.Impact,
 			VariantAllele:       ann.Allele,
-			AminoAcids:          formatAminoAcidsVEP(ann.AminoAcidChange),
+			AminoAcids:          aminoAcidsField(ann),
 			Codons:              ann.CodonChange,
 			ProteinStart:        pStart,
 			ProteinEnd:          pEnd,

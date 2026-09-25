@@ -115,6 +115,7 @@ func (a *Annotator) Annotate(v *vcf.Variant) ([]*Annotation, error) {
 			CDSPosition:        result.CDSPosition,
 			ProteinPosition:    result.ProteinPosition,
 			AminoAcidChange:    result.AminoAcidChange,
+			AminoAcidsVEP:      result.AminoAcidsVEP,
 			CodonChange:        result.CodonChange,
 			IsCanonicalMSK:     t.IsCanonicalMSK,
 			IsCanonicalEnsembl: t.IsCanonicalEnsembl,

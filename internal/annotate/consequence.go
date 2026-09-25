@@ -19,6 +19,12 @@ type ConsequenceResult struct {
 	AltAA              byte
 	EndAA              byte // Amino acid at end position (for multi-AA deletions)
 	AminoAcidChange    string
+	// AminoAcidsVEP overrides the amino_acids field when VEP writes a bare
+	// reference residue rather than a ref/alt pair, which is what it does
+	// when it declines to describe the protein. genome-nexus builds its
+	// placeholder from this, so p.R700fs needs "R" here; without it the
+	// reference residue is unknown and it renders p.*700fs*.
+	AminoAcidsVEP      string
 	CodonChange        string
 	ExonNumber         string
 	IntronNumber       string
@@ -721,6 +727,44 @@ func predictIndelConsequence(v *vcf.Variant, t *cache.Transcript, result *Conseq
 			// frameshift_variant with a splice term, or
 			// "stop_gained,frameshift_variant" (517) -- but stop_gained alone
 			// zero times. Reclassifying here cost 2,427 rows.
+		}
+	}
+
+	// A deletion that 3'-shifts onto the essential donor dinucleotide destroys
+	// the splice site, so the downstream reading frame is no longer something
+	// the transcript predicts. VEP emits no protein description for these and
+	// genome-nexus renders p.<pos>fs from the protein position instead.
+	if _, _, delLen, k, ok := deletionShiftIntoIntron(v, t); ok && deletionHitsDonor(delLen, k) {
+		result.SuppressHGVSp = true
+		// The residue must be the one at the position genome-nexus reports,
+		// which is ProteinStart. result.RefAA belongs to the frameshift's own
+		// first changed codon and can be one further along: PTEN c.801+1del
+		// reports position 267 (Lys) while RefAA is the Asp at 268.
+		pos := result.ProteinStart
+		if pos < 1 {
+			pos = result.ProteinPosition
+		}
+		// A frameshift names the single residue at that position; an in-frame
+		// deletion names every residue it removes, which is how VEP arrives at
+		// p.DDDEEdel for the five codons of NPM1 c.511_524+1del.
+		n := 1
+		if delLen%3 == 0 {
+			n = delLen / 3
+		}
+		var aas []byte
+		for i := 0; i < n; i++ {
+			codon := GetCodon(t.CDSSequence, pos+int64(i))
+			if len(codon) != 3 {
+				break
+			}
+			aa := TranslateCodon(codon)
+			if aa == 0 {
+				break
+			}
+			aas = append(aas, aa)
+		}
+		if len(aas) > 0 {
+			result.AminoAcidsVEP = string(aas)
 		}
 	}
 

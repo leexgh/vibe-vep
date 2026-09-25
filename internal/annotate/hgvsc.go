@@ -286,6 +286,16 @@ func formatHGVScDeletion(v *vcf.Variant, t *cache.Transcript, prefix string, ref
 			}
 			return string(buf[:n])
 		}
+		// A deletion whose 3' end reaches the exon edge may keep shifting into
+		// the intron (see deletionShiftIntoIntron).
+		if sc, ee, _, k, ok := deletionShiftIntoIntron(v, t); ok {
+			result.HGVSOffset = int(sc-delStartCDS) + 0
+			if result.HGVSOffset < 0 {
+				result.HGVSOffset = 0
+			}
+			return formatDeletionAcrossDonor(sc, ee, k)
+		}
+
 		// Pure deletion: apply 3' shift (stops at exon boundary)
 		maxIdx := cdsExonEndIdx(int(delEndCDS-1), t)
 		sStart, sEnd := shiftDeletionThreePrime(int(delStartCDS-1), int(delEndCDS-1), t.CDSSequence, maxIdx)
@@ -339,6 +349,113 @@ func formatHGVScDeletion(v *vcf.Variant, t *cache.Transcript, prefix string, ref
 	}
 	delEndStr := genomicToHGVScPos(delEndGenomic, t)
 	return prefix + delStartStr + "_" + delEndStr + "del"
+}
+
+// deletionShiftIntoIntron handles a pure deletion whose 3' end reaches the end
+// of an exon and can keep shifting 3' into the following intron.
+//
+// HGVS places a deletion as far 3' as possible and does not stop at a splice
+// boundary. CYLD c.2099del sits on the last base of an exon whose intron opens
+// with the same base, so VEP reports c.2099+1del: the deletion has moved onto
+// the essential donor base. vibe-vep stopped at the exon end and reported the
+// unshifted c.2099del.
+//
+// Returns the post-shift exonic start (1-based CDS), the exon's last CDS
+// position, the deletion length, and how many bases it moved into the intron.
+// ok is false when the shape does not apply or no flank is stored.
+func deletionShiftIntoIntron(v *vcf.Variant, t *cache.Transcript) (startCDS, exonEndCDS int64, delLen, k int, ok bool) {
+	refLen := len(v.Ref)
+	if refLen == 0 || len(v.Alt) != 0 || len(t.CDSSequence) == 0 || !t.IsProteinCoding() {
+		return 0, 0, 0, 0, false
+	}
+	lo, hi := v.Pos, v.Pos+int64(refLen)-1
+	codingStart, codingEnd := lo, hi
+	if t.IsReverseStrand() {
+		codingStart, codingEnd = hi, lo
+	}
+	sCDS := GenomicToCDS(codingStart, t)
+	eCDS := GenomicToCDS(codingEnd, t)
+	if sCDS < 1 || eCDS < 1 {
+		return 0, 0, 0, 0, false // not fully exonic
+	}
+	exon := t.FindExon(codingEnd)
+	if exon == nil {
+		return 0, 0, 0, 0, false
+	}
+	exonCodingEnd := exon.End
+	if t.IsReverseStrand() {
+		exonCodingEnd = exon.Start
+	}
+	eEnd := GenomicToCDS(exonCodingEnd, t)
+	if eEnd < 1 {
+		return 0, 0, 0, 0, false
+	}
+
+	// Shift within the exon first, exactly as the ordinary path does.
+	sStart, sEnd := shiftDeletionThreePrime(int(sCDS-1), int(eCDS-1), t.CDSSequence, int(eEnd-1))
+	if int64(sEnd) != eEnd-1 {
+		return 0, 0, 0, 0, false // 3' end never reaches the exon edge; nothing to cross
+	}
+	s := int64(sStart) + 1
+	L := sEnd - sStart + 1
+
+	// Keep going into the intron. Position p is CDS while p <= eEnd, and the
+	// (p-eEnd)th intron base beyond that, so one accessor covers both sides.
+	flank := exon.IntronAfter
+	cds := t.CDSSequence
+	baseAt := func(p int64) (byte, bool) {
+		if p <= eEnd {
+			if p < 1 || int(p) > len(cds) {
+				return 0, false
+			}
+			return cds[p-1], true
+		}
+		i := int(p - eEnd - 1)
+		if i >= len(flank) {
+			return 0, false
+		}
+		return flank[i], true
+	}
+	n := 0
+	for {
+		leaving, okL := baseAt(s + int64(n))
+		entering, okE := baseAt(eEnd + int64(n) + 1)
+		if !okL || !okE || leaving != entering {
+			break
+		}
+		n++
+	}
+	if n == 0 {
+		return 0, 0, 0, 0, false
+	}
+	return s + int64(n), eEnd, L, n, true
+}
+
+// formatDeletionAcrossDonor renders a deletion that has shifted k bases past the
+// end of an exon, keeping whatever exonic part remains.
+func formatDeletionAcrossDonor(startCDS, exonEndCDS int64, k int) string {
+	if startCDS <= exonEndCDS {
+		// Part of the deletion is still exonic: c.START_EXONEND+k del
+		return "c." + strconv.FormatInt(startCDS, 10) + "_" +
+			strconv.FormatInt(exonEndCDS, 10) + "+" + strconv.Itoa(k) + "del"
+	}
+	// Entirely intronic now: c.EXONEND+a_EXONEND+k del
+	a := int(startCDS - exonEndCDS)
+	base := "c." + strconv.FormatInt(exonEndCDS, 10) + "+"
+	if a == k {
+		return base + strconv.Itoa(k) + "del"
+	}
+	return base + strconv.Itoa(a) + "_" + base + strconv.Itoa(k) + "del"
+}
+
+// deletionHitsDonor reports whether the shifted deletion covers the first two
+// intron bases, the essential donor dinucleotide.
+func deletionHitsDonor(delLen, k int) bool {
+	first := k - delLen + 1
+	if first < 1 {
+		first = 1
+	}
+	return first <= 2 && k >= 1
 }
 
 // straddlingDeletionShift computes how far a pure deletion running from an exon

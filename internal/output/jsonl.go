@@ -263,7 +263,7 @@ func (j *JSONLWriter) marshalVEP() ([]byte, error) {
 			ConsequenceTerms:    splitConsequence(ann.Consequence),
 			Impact:              ann.Impact,
 			VariantAllele:       ann.Allele,
-			AminoAcids:          formatAminoAcidsVEP(ann.AminoAcidChange),
+			AminoAcids:          aminoAcidsField(ann),
 			Codons:              ann.CodonChange,
 			ProteinStart:        pStart,
 			ProteinEnd:          pEnd,
@@ -424,4 +424,14 @@ func formatAminoAcidsVEP(change string) string {
 		return ""
 	}
 	return change[:1] + "/" + change[len(change)-1:]
+}
+
+// aminoAcidsField returns the VEP amino_acids value: the raw override when the
+// annotation carries one, otherwise the ref/alt pair derived from the amino
+// acid change.
+func aminoAcidsField(ann *annotate.Annotation) string {
+	if ann.AminoAcidsVEP != "" {
+		return ann.AminoAcidsVEP
+	}
+	return formatAminoAcidsVEP(ann.AminoAcidChange)
 }
