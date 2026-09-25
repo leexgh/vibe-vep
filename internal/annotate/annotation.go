@@ -38,6 +38,7 @@ const (
 	// Compound consequences (pre-built to avoid runtime concatenation).
 	ConsequenceSpliceRegionIntron   = "splice_region_variant,intron_variant"
 	ConsequenceStopLost3PrimeUTR    = "stop_lost,3_prime_UTR_variant"
+	ConsequenceStartLost5PrimeUTR   = "start_lost,5_prime_UTR_variant"
 	ConsequenceStopGainedInframeDel = "stop_gained,inframe_deletion"
 	ConsequenceFrameshiftStopLost   = "frameshift_variant,stop_lost"
 

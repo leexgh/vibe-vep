@@ -35,7 +35,11 @@ type ConsequenceResult struct {
 	// ProteinPosition is the 3'-shifted position the HGVSp is written at. VEP
 	// reports the two differently -- PBRM1 gives protein_start 1169 alongside
 	// its own p.I1170Sfs*23 -- so they cannot share one field.
-	ProteinStart int64
+	// SuppressHGVSp marks a variant VEP declines to describe at the protein
+	// level, so the final HGVSp is emitted empty and genome-nexus renders its
+	// own placeholder from the protein position.
+	SuppressHGVSp bool
+	ProteinStart  int64
 	ProteinEnd   int64
 	// HGVSOffset is how far the variant was 3'-shifted to reach its HGVS
 	// representation, in bases. VEP reports this as hgvs_offset and omits it
@@ -242,6 +246,15 @@ func PredictConsequence(v *vcf.Variant, t *cache.Transcript) *ConsequenceResult 
 			result.ProteinPosition = 1
 			result.Impact = GetImpact(result.Consequence)
 			result.HGVSp = FormatHGVSp(result)
+			// A deletion that runs off the 5' end of the CDS into the UTR has
+			// no well-defined protein description and VEP emits none, leaving
+			// genome-nexus to synthesize the p.*N* placeholder from the protein
+			// position. Emitting our own p.Met1? here would win the argument
+			// and lose the comparison.
+			if variantLeavesCDS(v, t, true) {
+				result.Consequence = ConsequenceStartLost5PrimeUTR
+				result.HGVSp = ""
+			}
 			return result
 		}
 	}
@@ -631,6 +644,9 @@ func predictIndelConsequence(v *vcf.Variant, t *cache.Transcript, result *Conseq
 				indelEndCDS := result.CDSPosition + int64(refLen) - 1
 				if indelEndCDS >= stopCodonCDSPos {
 					result.Consequence = ConsequenceStopLost3PrimeUTR
+					if variantLeavesCDS(v, t, false) {
+						result.SuppressHGVSp = true
+					}
 				}
 			}
 			// Compute protein-level change (may reveal delins if junction creates new AA)
@@ -668,6 +684,15 @@ func predictIndelConsequence(v *vcf.Variant, t *cache.Transcript, result *Conseq
 			indelEndCDS := result.CDSPosition + int64(refLen) - 1
 			if indelEndCDS >= stopCodonCDSPos {
 				result.Consequence = ConsequenceFrameshiftStopLost
+				if variantLeavesCDS(v, t, false) {
+					// Past the stop codon and into the 3'UTR there is no
+					// well-defined protein product. VEP reports
+					// stop_lost,3_prime_UTR_variant and emits no HGVSp,
+					// leaving genome-nexus to synthesize the p.*N*
+					// placeholder from the protein position.
+					result.Consequence = ConsequenceStopLost3PrimeUTR
+					result.SuppressHGVSp = true
+				}
 			}
 		}
 		// Compute the new amino acid and distance to first stop codon
@@ -693,6 +718,9 @@ func predictIndelConsequence(v *vcf.Variant, t *cache.Transcript, result *Conseq
 
 	result.Impact = GetImpact(result.Consequence)
 	result.HGVSp = FormatHGVSp(result)
+	if result.SuppressHGVSp {
+		result.HGVSp = ""
+	}
 
 	// An in-frame change that both deletes and inserts is reported by VEP as
 	// protein_altering_variant rather than a clean inframe insertion/deletion.
@@ -1129,6 +1157,21 @@ func cdsEditIndex(cdsPos int64, ref string, t *cache.Transcript) int {
 		idx = len(t.CDSSequence)
 	}
 	return idx
+}
+
+// variantLeavesCDS reports whether the variant reaches outside the CDS on the
+// given side, in coding orientation: fivePrime means past the start codon,
+// otherwise past the stop codon.
+func variantLeavesCDS(v *vcf.Variant, t *cache.Transcript, fivePrime bool) bool {
+	lo := v.Pos
+	hi := v.Pos + int64(len(v.Ref)) - 1
+	if hi < lo {
+		hi = lo
+	}
+	if t.IsForwardStrand() == fivePrime {
+		return lo < t.CDSStart
+	}
+	return hi > t.CDSEnd
 }
 
 // GenomicToCDS converts a genomic position to CDS position within a transcript.
