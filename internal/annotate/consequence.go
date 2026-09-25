@@ -904,9 +904,13 @@ func computeInframeProteinChange(v *vcf.Variant, t *cache.Transcript, cdsPos int
 	// For in-frame indels, the protein change is local — we only need enough
 	// codons to find the first/last differences plus suffix matching.
 	indelCodons := (len(ref) + len(alt) + 5) / 3
-	windowCodons := indelCodons + 10
-	if windowCodons < 20 {
-		windowCodons = 20
+	// The window must also cover the 3' shift applied below, not just the
+	// change itself. At +10 the AR poly-Q deletion c.213_239del had exactly no
+	// room left (first=11, L=9, origN=20) and could not shift at all, so it
+	// reported p.Q68_Q76del where VEP has p.Q72_Q80del.
+	windowCodons := indelCodons + 30
+	if windowCodons < 40 {
+		windowCodons = 40
 	}
 
 	// Translate original window
@@ -982,6 +986,28 @@ func computeInframeProteinChange(v *vcf.Variant, t *cache.Transcript, cdsPos int
 	}
 	if mi >= first {
 		insertedAAs = string(mutAAs[first : mi+1])
+	}
+
+	// The diff above is 5'-anchored: it reports the leftmost residue that
+	// differs. HGVS assigns the most 3' position possible and VEP follows that
+	// at the protein level, so inside a repeat the two disagree -- the 9-codon
+	// deletion c.213_239del is p.Q72_Q80del to VEP but lands on codon 68 here,
+	// with an identical HGVSc either way.
+	//
+	// A pure deletion slides 3' while the residue leaving the front of the
+	// deleted block matches the one entering at the back. Bounded by the
+	// translated window, so a shift that would run past it simply stops.
+	if len(insertedAAs) == 0 && len(deletedAAs) > 0 {
+		L := len(deletedAAs)
+		shift := 0
+		for first+shift+L < origN && origAAs[first+shift] == origAAs[first+shift+L] {
+			shift++
+		}
+		if shift > 0 {
+			startPos = basePos + int64(first+shift)
+			endPos = startPos + int64(L) - 1
+			deletedAAs = string(origAAs[first+shift : first+shift+L])
+		}
 	}
 	return
 }
