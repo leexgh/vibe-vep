@@ -405,7 +405,6 @@ func deletionShiftIntoIntron(v *vcf.Variant, t *cache.Transcript) (startCDS, exo
 
 	// Keep going into the intron. Position p is CDS while p <= eEnd, and the
 	// (p-eEnd)th intron base beyond that, so one accessor covers both sides.
-	flank := exon.IntronAfter
 	cds := t.CDSSequence
 	baseAt := func(p int64) (byte, bool) {
 		if p <= eEnd {
@@ -414,11 +413,7 @@ func deletionShiftIntoIntron(v *vcf.Variant, t *cache.Transcript) (startCDS, exo
 			}
 			return cds[p-1], true
 		}
-		i := int(p - eEnd - 1)
-		if i >= len(flank) {
-			return 0, false
-		}
-		return flank[i], true
+		return exon.IntronAfterBase(int(p - eEnd - 1))
 	}
 	n := 0
 	for {
@@ -468,7 +463,7 @@ func deletionHitsDonor(delLen, k int) bool {
 // HGVS places a deletion as far 3' as possible. Each step is allowed when the
 // base leaving the front of the deleted span equals the base entering at the
 // back; here the front is exonic and the back is intronic, so the test needs
-// intron sequence. That is what Exon.IntronAfter carries.
+// intron sequence. That is what Exon.IntronAfterPacked carries.
 //
 //	MET  vibe c.3015_3028+6del -> VEP c.3016_3028+7del  (offset 1)
 //	B2M  vibe c.59_67+237del   -> VEP c.61_67+239del    (offset 2)
@@ -511,13 +506,13 @@ func straddlingDeletionShift(v *vcf.Variant, t *cache.Transcript) (shift int, ne
 		return 0, 0
 	}
 
-	flank := exon.IntronAfter
 	cds := t.CDSSequence
 	k := 0
 	for {
 		fi := int(tail) + k // 0-based index of the base just past the deletion
 		ci := int(startCDS) - 1 + k
-		if fi >= len(flank) || ci >= len(cds) || flank[fi] != cds[ci] {
+		entering, ok := exon.IntronAfterBase(fi)
+		if !ok || ci >= len(cds) || entering != cds[ci] {
 			break
 		}
 		k++

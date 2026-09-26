@@ -1,7 +1,10 @@
 // Package cache provides VEP cache loading functionality.
 package cache
 
-import "sort"
+import (
+	"sort"
+	"strings"
+)
 
 // CDSRegion represents a contiguous coding segment within an exon,
 // with its pre-computed cumulative CDS offset for O(log n) lookup.
@@ -52,12 +55,64 @@ type Exon struct {
 	CDSStart int64 // CDS portion start, 0 if entirely non-coding
 	CDSEnd   int64 // CDS portion end, 0 if entirely non-coding
 	Frame    int   // Reading frame (0, 1, or 2), -1 if non-coding
-	// IntronBefore/IntronAfter hold up to IntronFlankBases of the adjacent
-	// intron in CODING orientation, empty for non-coding exons. They exist so
-	// a deletion at an exon edge can still be 3'-shifted past the boundary;
-	// see the note on IntronFlankBases.
-	IntronBefore string
-	IntronAfter  string
+	// IntronBeforePacked/IntronAfterPacked hold up to IntronFlankBases of the
+	// adjacent intron in CODING orientation, empty for non-coding exons. They
+	// exist so a deletion at an exon edge can still be 3'-shifted past the
+	// boundary; see the note on IntronFlankBases.
+	//
+	// Stored two bits per base, four to a byte, because these are carried for
+	// every coding exon of every transcript: 1.4M flanks, where plain bytes
+	// cost four times as much cache. The lengths are separate since the final
+	// byte is usually partial.
+	IntronBeforePacked []byte
+	IntronAfterPacked  []byte
+	IntronBeforeLen    uint8
+	IntronAfterLen     uint8
+}
+
+// packedBases is the 2-bit alphabet; anything else (an N in an assembly gap)
+// cannot be encoded and truncates the flank, which is the right behaviour
+// anyway: a shift cannot be validated across a base we do not know.
+const packedBases = "ACGT"
+
+// PackDNA2Bit encodes a DNA string two bits per base, stopping at the first
+// base outside ACGT. It returns the packed bytes and how many bases they hold.
+func PackDNA2Bit(s string) ([]byte, uint8) {
+	n := 0
+	for n < len(s) && n < 255 {
+		if strings.IndexByte(packedBases, s[n]) < 0 {
+			break
+		}
+		n++
+	}
+	if n == 0 {
+		return nil, 0
+	}
+	buf := make([]byte, (n+3)/4)
+	for i := 0; i < n; i++ {
+		code := byte(strings.IndexByte(packedBases, s[i]))
+		buf[i/4] |= code << (uint(3-i%4) * 2)
+	}
+	return buf, uint8(n)
+}
+
+// IntronAfterBase returns the i-th base (0-based) of the intron flank 3' of the
+// exon in coding orientation.
+func (e *Exon) IntronAfterBase(i int) (byte, bool) {
+	return unpackBase(e.IntronAfterPacked, e.IntronAfterLen, i)
+}
+
+// IntronBeforeBase returns the i-th base (0-based) of the intron flank 5' of
+// the exon in coding orientation.
+func (e *Exon) IntronBeforeBase(i int) (byte, bool) {
+	return unpackBase(e.IntronBeforePacked, e.IntronBeforeLen, i)
+}
+
+func unpackBase(buf []byte, n uint8, i int) (byte, bool) {
+	if i < 0 || i >= int(n) {
+		return 0, false
+	}
+	return packedBases[(buf[i/4]>>(uint(3-i%4)*2))&3], true
 }
 
 // BuildCDSIndex pre-computes CDS region offsets and exonic base counts

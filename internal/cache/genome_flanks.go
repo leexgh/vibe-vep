@@ -19,9 +19,12 @@ import (
 // bases. NPM1 c.510_524del shifts 14 bases to the exon boundary and stalls
 // there, where VEP reports c.511_524+1del with offset 15.
 //
-// 60 covers every case observed against VEP111 on the MSK-IMPACT set, where the
-// largest unreachable shift is 56 bases.
-const IntronFlankBases = 60
+// The flank must span the deletion's intronic tail AND the shift, not just
+// the shift: a deletion already 40 bases into an intron needs base 41 to test
+// its first step. Measured against VEP111 on the MSK-IMPACT set the required
+// depth is median 69, so 100 reaches about half of them; going deeper is a
+// straight size trade (see the sizing table in the commit history).
+const IntronFlankBases = 100
 
 // GenomeFlankLoader fills in the intron flanks of coding exons from a genomic
 // FASTA. The genome itself is not retained: one chromosome is held at a time,
@@ -152,12 +155,12 @@ func fillFlanks(seq []byte, transcripts []*Transcript) {
 			hiStart, hiEnd := e.End+1, e.End+IntronFlankBases
 			before := clampSlice(seq, loStart, loEnd, n)
 			after := clampSlice(seq, hiStart, hiEnd, n)
-			if t.Strand == 1 {
-				e.IntronBefore, e.IntronAfter = before, after
-			} else {
+			if t.Strand != 1 {
 				// Coding orientation: the genomic 3' side precedes the exon.
-				e.IntronBefore, e.IntronAfter = ReverseComplementDNA(after), ReverseComplementDNA(before)
+				before, after = ReverseComplementDNA(after), ReverseComplementDNA(before)
 			}
+			e.IntronBeforePacked, e.IntronBeforeLen = PackDNA2Bit(before)
+			e.IntronAfterPacked, e.IntronAfterLen = PackDNA2Bit(after)
 		}
 	}
 }
