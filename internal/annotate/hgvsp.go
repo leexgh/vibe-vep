@@ -109,6 +109,28 @@ func FormatHGVSp(result *ConsequenceResult) string {
 		// to a nonsense call: c.1125_1126delinsTT is p.K375_Q376delinsN* and
 		// c.1284_1285inv is p.Y428_Y429delins*, not p.K375* / p.Y428*.
 		// predictMNVConsequence already recorded the span on the delins fields.
+		// A pure insertion that introduces a stop still brackets the insertion
+		// point: VEP writes p.E288_T289ins* for c.863_864insGTA, not p.E288*.
+		// The delins form below covers the case where the anchor codon also
+		// changed; this one is the plain insertion.
+		if !result.IsDelIns && len(result.InsertedAAs) > 0 && result.RefAA != 0 && result.EndAA != 0 {
+			n += copy(buf[n:], "p.")
+			n += copy(buf[n:], aaThree(result.RefAA))
+			n += putInt64(buf[n:], pos)
+			buf[n] = '_'
+			n++
+			n += copy(buf[n:], aaThree(result.EndAA))
+			n += putInt64(buf[n:], pos+1)
+			n += copy(buf[n:], "ins")
+			ins := result.InsertedAAs
+			for i := 0; i < len(ins); i++ {
+				if ins[i] == '*' {
+					ins = ins[:i+1] // nothing is translated past a stop
+					break
+				}
+			}
+			return string(buf[:n]) + formatAASequence(ins)
+		}
 		if result.IsDelIns && len(result.InsertedAAs) > 0 {
 			n += copy(buf[n:], "p.")
 			if result.RefAA != 0 {
