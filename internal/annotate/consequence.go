@@ -135,7 +135,11 @@ func PredictConsequence(v *vcf.Variant, t *cache.Transcript) *ConsequenceResult 
 				pos, _ = CDSToCodonPosition(sStart)
 			}
 			if pos == 0 {
-				if _, ns := straddlingDeletionShift(v, t); ns > 0 {
+				_, ns := straddlingDeletionShift(v, t)
+				if ns == 0 {
+					_, ns = acceptorSideDeletionShift(v, t)
+				}
+				if ns > 0 {
 					pos, _ = CDSToCodonPosition(ns)
 				}
 			}

@@ -329,7 +329,12 @@ func formatHGVScDeletion(v *vcf.Variant, t *cache.Transcript, prefix string, ref
 	// A deletion running from an exon into the following intron can still be
 	// 3'-shifted, using the stored intron flank (see straddlingDeletionShift).
 	if len(extraAlt) == 0 {
-		if k, _ := straddlingDeletionShift(v, t); k > 0 {
+		k, _ := straddlingDeletionShift(v, t)
+		if k == 0 {
+			// The donor flank did not reach; the next exon may be nearer.
+			k, _ = acceptorSideDeletionShift(v, t)
+		}
+		if k > 0 {
 			d := int64(k)
 			if t.IsReverseStrand() {
 				d = -d
@@ -353,6 +358,84 @@ func formatHGVScDeletion(v *vcf.Variant, t *cache.Transcript, prefix string, ref
 	}
 	delEndStr := genomicToHGVScPos(delEndGenomic, t)
 	return prefix + delStartStr + "_" + delEndStr + "del"
+}
+
+// acceptorSideDeletionShift handles the same shape as straddlingDeletionShift --
+// a deletion running from an exon into the following intron -- but reads the
+// flank of the NEXT exon rather than the previous one.
+//
+// HGVS numbers an intronic position from whichever exon is nearer, so a
+// deletion written c.715_863-229del ends 229 bases before the next exon while
+// sitting far further than that beyond the previous one. Walking the donor
+// flank would mean crossing most of the intron; the acceptor flank reaches it
+// in 229. Both flanks are stored, and this is the one that was going unread.
+//
+// Returns the shift distance and the CDS position the deletion starts at after
+// shifting, or zeros when the shape does not apply or the flank is too short.
+func acceptorSideDeletionShift(v *vcf.Variant, t *cache.Transcript) (shift int, newStartCDS int64) {
+	refLen := len(v.Ref)
+	if refLen == 0 || len(v.Alt) != 0 || len(t.CDSSequence) == 0 || !t.IsProteinCoding() {
+		return 0, 0
+	}
+	lo, hi := v.Pos, v.Pos+int64(refLen)-1
+	codingStart, codingEnd := lo, hi
+	if t.IsReverseStrand() {
+		codingStart, codingEnd = hi, lo
+	}
+	startCDS := GenomicToCDS(codingStart, t)
+	if startCDS < 1 || GenomicToCDS(codingEnd, t) > 0 {
+		return 0, 0
+	}
+	idx := t.FindExonIdx(codingStart)
+	if idx < 0 {
+		return 0, 0
+	}
+	// Exons are sorted ascending by genomic start, so transcript order runs
+	// forward on the plus strand and backward on the minus.
+	next := idx + 1
+	if t.IsReverseStrand() {
+		next = idx - 1
+	}
+	if next < 0 || next >= len(t.Exons) {
+		return 0, 0
+	}
+	nextExon := &t.Exons[next]
+
+	// How many intronic bases lie between the deletion's 3' end and that exon.
+	var gap int64
+	if t.IsReverseStrand() {
+		gap = codingEnd - nextExon.End
+	} else {
+		gap = nextExon.Start - codingEnd
+	}
+	if gap < 1 {
+		return 0, 0
+	}
+	f := int64(nextExon.IntronBeforeLen)
+	if f == 0 || gap > f {
+		return 0, 0 // the flank does not reach back that far
+	}
+
+	cds := t.CDSSequence
+	k := 0
+	for {
+		// Acceptor-relative position of the base entering at the back, counted
+		// as a positive distance before the exon.
+		rel := gap - 1 - int64(k)
+		if rel < 1 {
+			break // reached the exon boundary itself
+		}
+		entering, ok := nextExon.IntronBeforeBase(int(f - rel))
+		ci := int(startCDS) - 1 + k
+		if !ok || ci >= len(cds) || entering != cds[ci] {
+			break
+		}
+		k++
+	}
+	if k == 0 {
+		return 0, 0
+	}
+	return k, startCDS + int64(k)
 }
 
 // deletionShiftIntoIntron handles a pure deletion whose 3' end reaches the end
