@@ -132,6 +132,21 @@ func formatHGVScInsertion(v *vcf.Variant, t *cache.Transcript, prefix string, re
 			if g := CDSToGenomic(int64(shiftedIdx+1), t); g != 0 {
 				if exon := t.FindExon(g); exon != nil {
 					result.HGVSOffset += k
+					// The inserted bases now sit inside the intron, where they
+					// are spliced out, so there is no protein product to
+					// describe. VEP emits no HGVSp for these and genome-nexus
+					// renders p.<residue><pos>fs from the protein position --
+					// KDM6A c.225+1dup is p.K75fs, not p.A76Gfs*6.
+					result.SuppressHGVSp = true
+					pos := result.ProteinStart
+					if pos < 1 {
+						pos = result.ProteinPosition
+					}
+					if cd := GetCodon(t.CDSSequence, pos); len(cd) == 3 {
+						if aa := TranslateCodon(cd); aa != 0 {
+							result.AminoAcidsVEP = string(aa)
+						}
+					}
 					return formatInsertionInIntron(rotated, exon, t, eEnd, k)
 				}
 			}

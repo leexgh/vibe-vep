@@ -94,6 +94,12 @@ func (a *Annotator) Annotate(v *vcf.Variant) ([]*Annotation, error) {
 
 		result := PredictConsequence(v, t)
 		result.HGVSc = FormatHGVSc(v, t, result)
+		// FormatHGVSc can discover that the variant shifts out of the exon,
+		// which is only knowable once the shift is done; the protein call is
+		// withdrawn here rather than re-derived.
+		if result.SuppressHGVSp {
+			result.HGVSp = ""
+		}
 
 		// Append biotype-specific modifier terms per VEP convention
 		consequence := result.Consequence
