@@ -691,13 +691,7 @@ func predictIndelConsequence(v *vcf.Variant, t *cache.Transcript, result *Conseq
 			// as stop_lost with a p.TerNNNXaaext*? protein change, where VEP has
 			// a plain deletion (CDK6 c.967_978del is p.L323_A326del).
 			if stopCodonCDSPos > 0 && result.CDSPosition > 0 {
-				indelEndCDS := result.CDSPosition + int64(refLen) - 1
-				if lo, hi := GenomicToCDS(v.Pos, t), GenomicToCDS(v.Pos+int64(refLen)-1, t); lo > 0 && hi > 0 {
-					indelEndCDS = lo
-					if hi > lo {
-						indelEndCDS = hi
-					}
-				}
+				indelEndCDS := cdsSpanEnd(v, t, result.CDSPosition+int64(refLen)-1)
 				if indelEndCDS >= stopCodonCDSPos {
 					result.Consequence = ConsequenceStopLost3PrimeUTR
 					if variantLeavesCDS(v, t, false) {
@@ -737,7 +731,7 @@ func predictIndelConsequence(v *vcf.Variant, t *cache.Transcript, result *Conseq
 		result.Consequence = ConsequenceFrameshiftVariant
 		// Check if frameshift overlaps stop codon (stop_lost)
 		if stopCodonCDSPos > 0 && result.CDSPosition > 0 {
-			indelEndCDS := result.CDSPosition + int64(refLen) - 1
+			indelEndCDS := cdsSpanEnd(v, t, result.CDSPosition+int64(refLen)-1)
 			if indelEndCDS >= stopCodonCDSPos {
 				result.Consequence = ConsequenceFrameshiftStopLost
 				if variantLeavesCDS(v, t, false) {
@@ -1114,12 +1108,12 @@ func stopCodonPreserved(v *vcf.Variant, t *cache.Transcript, cdsPos int64) bool 
 		return false
 	}
 
-	cdsIdx := int(cdsPos - 1)
 	ref, alt := v.Ref, v.Alt
 	if t.IsReverseStrand() {
 		ref = ReverseComplement(ref)
 		alt = ReverseComplement(alt)
 	}
+	cdsIdx := cdsEditIndex(cdsPos, ref, t)
 
 	endIdx := cdsIdx + len(ref)
 	if endIdx > len(t.CDSSequence) {
@@ -1292,6 +1286,26 @@ func variantLeavesCDS(v *vcf.Variant, t *cache.Transcript, fivePrime bool) bool 
 		return lo < t.CDSStart
 	}
 	return hi > t.CDSEnd
+}
+
+// cdsSpanEnd returns the highest CDS position the variant touches.
+//
+// It has to come from both genomic ends. CDSPosition names the LAST affected
+// base on a reverse-strand transcript, so adding the ref length to it overshoots
+// by that much and reaches whatever lies beyond -- typically the stop codon,
+// which is how ordinary in-frame deletions came to be reported as stop_lost.
+// Four separate sites derived this by hand before it was factored out; prefer
+// this function to re-deriving it.
+func cdsSpanEnd(v *vcf.Variant, t *cache.Transcript, fallback int64) int64 {
+	lo := GenomicToCDS(v.Pos, t)
+	hi := GenomicToCDS(v.Pos+int64(len(v.Ref))-1, t)
+	if lo > 0 && hi > 0 {
+		if hi > lo {
+			return hi
+		}
+		return lo
+	}
+	return fallback
 }
 
 // GenomicToCDS converts a genomic position to CDS position within a transcript.
