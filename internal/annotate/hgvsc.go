@@ -126,6 +126,17 @@ func formatHGVScInsertion(v *vcf.Variant, t *cache.Transcript, prefix string, re
 			unshiftedAnchor+1, unshiftedAnchor, string(seq))
 		seqLen := len(seq)
 
+		// The shift stops at the exon edge; HGVS does not (see
+		// insertionShiftIntoIntron).
+		if k, rotated, eEnd, okShift := insertionShiftIntoIntron(seq, shiftedIdx, t); okShift {
+			if g := CDSToGenomic(int64(shiftedIdx+1), t); g != 0 {
+				if exon := t.FindExon(g); exon != nil {
+					result.HGVSOffset += k
+					return formatInsertionInIntron(rotated, exon, t, eEnd, k)
+				}
+			}
+		}
+
 		// HGVS defines insertion and duplication as mutually exclusive: an
 		// insertion is a change "where the insertion is not a copy of a sequence
 		// immediately 5'", and a duplication is a copy inserted "directly 3' of
@@ -358,6 +369,101 @@ func formatHGVScDeletion(v *vcf.Variant, t *cache.Transcript, prefix string, ref
 	}
 	delEndStr := genomicToHGVScPos(delEndGenomic, t)
 	return prefix + delStartStr + "_" + delEndStr + "del"
+}
+
+// insertionShiftIntoIntron continues an insertion's 3' shift past the end of an
+// exon using the stored intron flank.
+//
+// shiftInsertionBuf stops at the exon edge, but HGVS does not: an insertion
+// sitting on the last base of an exon keeps moving while the intron repeats it.
+// KDM6A c.225dup is c.225+1dup to VEP, the duplicated base being the first base
+// of the intron rather than the last of the exon.
+//
+// seq is the inserted sequence on the coding strand and shiftedIdx the 0-based
+// CDS index of the base the insertion currently follows. Returns how far it
+// moved, the rotated sequence, and the exon's last CDS position.
+func insertionShiftIntoIntron(seq []byte, shiftedIdx int, t *cache.Transcript) (k int, rotated []byte, exonEndCDS int64, ok bool) {
+	if len(seq) == 0 || shiftedIdx < 0 {
+		return 0, nil, 0, false
+	}
+	g := CDSToGenomic(int64(shiftedIdx+1), t)
+	if g == 0 {
+		return 0, nil, 0, false
+	}
+	exon := t.FindExon(g)
+	if exon == nil {
+		return 0, nil, 0, false
+	}
+	exonCodingEnd := exon.End
+	if t.IsReverseStrand() {
+		exonCodingEnd = exon.Start
+	}
+	eEnd := GenomicToCDS(exonCodingEnd, t)
+	if eEnd < 1 || int64(shiftedIdx+1) != eEnd {
+		return 0, nil, 0, false // not sitting on the exon's last base
+	}
+
+	L := len(seq)
+	n := 0
+	for {
+		entering, okB := exon.IntronAfterBase(n)
+		if !okB || entering != seq[n%L] {
+			break
+		}
+		n++
+	}
+	if n == 0 {
+		return 0, nil, 0, false
+	}
+	r := make([]byte, L)
+	for i := 0; i < L; i++ {
+		r[i] = seq[(i+n%L)%L]
+	}
+	return n, r, eEnd, true
+}
+
+// formatInsertionInIntron renders an insertion that has moved k bases past the
+// end of an exon, as a duplication when the bases it now follows repeat it,
+// otherwise as a plain insertion between two intronic positions.
+//
+// The duplicated stretch can straddle the boundary: RPS6KB2 is c.777_798+12dup,
+// starting inside the exon and ending twelve bases into the intron. Positions
+// are therefore addressed on a single axis where exonEndCDS+j is the jth intron
+// base, and rendered back into c. notation at the end.
+func formatInsertionInIntron(rotated []byte, exon *cache.Exon, t *cache.Transcript, exonEndCDS int64, k int) string {
+	L := len(rotated)
+	baseAt := func(p int64) (byte, bool) {
+		if p <= exonEndCDS {
+			if p < 1 || int(p) > len(t.CDSSequence) {
+				return 0, false
+			}
+			return t.CDSSequence[p-1], true
+		}
+		return exon.IntronAfterBase(int(p - exonEndCDS - 1))
+	}
+	pos := func(p int64) string {
+		if p <= exonEndCDS {
+			return strconv.FormatInt(p, 10)
+		}
+		return strconv.FormatInt(exonEndCDS, 10) + "+" + strconv.FormatInt(p-exonEndCDS, 10)
+	}
+
+	end := exonEndCDS + int64(k)
+	start := end - int64(L) + 1
+	match := start >= 1
+	for i := 0; match && i < L; i++ {
+		b, ok := baseAt(start + int64(i))
+		if !ok || b != rotated[i] {
+			match = false
+		}
+	}
+	if match {
+		if L == 1 {
+			return "c." + pos(end) + "dup"
+		}
+		return "c." + pos(start) + "_" + pos(end) + "dup"
+	}
+	return "c." + pos(end) + "_" + pos(end+1) + "ins" + string(rotated)
 }
 
 // acceptorSideDeletionShift handles the same shape as straddlingDeletionShift --
