@@ -227,6 +227,11 @@ func formatHGVScInsertion(v *vcf.Variant, t *cache.Transcript, prefix string, re
 	// is intronic (CDS=0) and the other is exonic. The CDS-based dup check
 	// above bails when the anchor is intronic, but the inserted base may
 	// still duplicate the exon boundary base.
+	// A pure insertion inside the intron may shift 3' into the exon.
+	if shifted, ok := insertionShiftIntronToExon(v, t, insertedSeq); ok {
+		return shifted
+	}
+
 	if sjDup := checkSpliceJunctionDup(v, t, insertedSeq); sjDup.isDup {
 		if sjDup.cdsStart == sjDup.cdsEnd {
 			return "c." + strconv.FormatInt(sjDup.cdsStart, 10) + "dup"
@@ -396,6 +401,118 @@ func formatHGVScDeletion(v *vcf.Variant, t *cache.Transcript, prefix string, ref
 	}
 	delEndStr := genomicToHGVScPos(delEndGenomic, t)
 	return prefix + delStartStr + "_" + delEndStr + "del"
+}
+
+// insertionShiftIntronToExon walks a pure insertion sitting inside an intron 3'
+// into the following exon, using the acceptor flank to cross the gap.
+//
+// checkSpliceJunctionDup below handles the single-base case where one flank is
+// already exonic. This is the general one: POLD1 inserts a G between the last
+// two bases of an intron whose exon then opens GGGGGG, and VEP reports the
+// result as c.2959dup, six bases inside the exon.
+//
+// Positions are addressed on one axis where the exon's first coding base is E
+// and E-k is the kth intron base before it, so the walk does not care which
+// side of the junction it is on.
+func insertionShiftIntronToExon(v *vcf.Variant, t *cache.Transcript, insertedSeq string) (string, bool) {
+	if insertedSeq == "" || len(t.CDSSequence) == 0 || !t.IsProteinCoding() {
+		return "", false
+	}
+	insAfter := v.Pos // base the insertion follows, in coding order
+	if t.IsReverseStrand() {
+		insAfter = v.Pos + 1
+	}
+	if GenomicToCDS(insAfter, t) >= 1 {
+		return "", false // already exonic; the CDS path handles it
+	}
+
+	// The exon the insertion is moving toward.
+	idx := t.FindNearestExonIdx(insAfter)
+	if idx < 0 {
+		return "", false
+	}
+	var exon *cache.Exon
+	for _, i := range [3]int{idx - 1, idx, idx + 1} {
+		if i < 0 || i >= len(t.Exons) {
+			continue
+		}
+		e := &t.Exons[i]
+		if !e.IsCoding() {
+			continue
+		}
+		if t.IsReverseStrand() && e.End < insAfter {
+			exon = e
+			break
+		}
+		if !t.IsReverseStrand() && e.Start > insAfter {
+			exon = e
+			break
+		}
+	}
+	if exon == nil || exon.IntronBeforeLen == 0 {
+		return "", false
+	}
+	firstCoding := exon.Start
+	if t.IsReverseStrand() {
+		firstCoding = exon.End
+	}
+	eCDS := GenomicToCDS(firstCoding, t)
+	if eCDS < 1 {
+		return "", false
+	}
+	// How far before the exon the insertion currently sits.
+	gap := firstCoding - insAfter
+	if t.IsReverseStrand() {
+		gap = insAfter - firstCoding
+	}
+	if gap < 1 || gap > int64(exon.IntronBeforeLen) {
+		return "", false
+	}
+
+	f := int64(exon.IntronBeforeLen)
+	cds := t.CDSSequence
+	baseAt := func(p int64) (byte, bool) {
+		if p >= eCDS {
+			if int(p) > len(cds) {
+				return 0, false
+			}
+			return cds[p-1], true
+		}
+		return exon.IntronBeforeBase(int(f - (eCDS - p)))
+	}
+
+	L := len(insertedSeq)
+	a := eCDS - gap // axis position the insertion follows
+	k := 0
+	for {
+		entering, ok := baseAt(a + int64(k) + 1)
+		if !ok || entering != insertedSeq[k%L] {
+			break
+		}
+		k++
+	}
+	if k == 0 || a+int64(k) < eCDS {
+		return "", false // never made it into the exon
+	}
+	end := a + int64(k)
+
+	// Duplication when the L bases it now follows repeat the insert.
+	rotated := insertedSeq[k%L:] + insertedSeq[:k%L]
+	start := end - int64(L) + 1
+	match := start >= 1
+	for i := 0; match && i < L; i++ {
+		b, ok := baseAt(start + int64(i))
+		if !ok || b != rotated[i] {
+			match = false
+		}
+	}
+	if match && start >= eCDS {
+		if L == 1 {
+			return "c." + strconv.FormatInt(end, 10) + "dup", true
+		}
+		return "c." + strconv.FormatInt(start, 10) + "_" + strconv.FormatInt(end, 10) + "dup", true
+	}
+	return "c." + strconv.FormatInt(end, 10) + "_" + strconv.FormatInt(end+1, 10) + "ins" + rotated, true
 }
 
 // insertionShiftIntoIntron continues an insertion's 3' shift past the end of an
