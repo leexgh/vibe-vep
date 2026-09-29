@@ -261,7 +261,32 @@ func PredictConsequence(v *vcf.Variant, t *cache.Transcript) *ConsequenceResult 
 		}
 		if indelEnd >= startCodonStart && v.Pos <= startCodonEnd {
 			result.Consequence = ConsequenceStartLost
+			// VEP names the residue the change actually lands on, which is Met1
+			// only when the variant sits in the first codon. c.7del is p.V3?,
+			// c.4del is p.A2?; the hardcoded 1 reported all of them as p.M1?.
 			result.ProteinPosition = 1
+			// The position is the one the variant lands on AFTER the 3' shift,
+			// not where the MAF places it. ERCC5 deletes c.3, inside the start
+			// codon, which is why this branch fires -- but the deletion shifts
+			// to c.7 and VEP reports p.V3?, not p.M1?.
+			firstDel := v.Pos
+			if t.IsReverseStrand() {
+				firstDel = v.Pos + int64(len(v.Ref)) - 1
+			}
+			if cdsPos := GenomicToCDS(firstDel, t); cdsPos >= 1 && len(t.CDSSequence) > 0 {
+				delStart := int(cdsPos - 1)
+				delEnd := delStart + len(v.Ref) - 1
+				if delEnd >= delStart {
+					sStart, _ := shiftDeletionThreePrime(delStart, delEnd,
+						t.CDSSequence, cdsExonEndIdx(delEnd, t))
+					if codon, _ := CDSToCodonPosition(int64(sStart) + 1); codon >= 1 {
+						result.ProteinPosition = codon
+						if cd := GetCodon(t.CDSSequence, codon); len(cd) == 3 {
+							result.RefAA = TranslateCodon(cd)
+						}
+					}
+				}
+			}
 			result.Impact = GetImpact(result.Consequence)
 			result.HGVSp = FormatHGVSp(result)
 			// A deletion that runs off the 5' end of the CDS into the UTR has
@@ -657,9 +682,22 @@ func predictIndelConsequence(v *vcf.Variant, t *cache.Transcript, result *Conseq
 			if !isDelIns(v.Ref, v.Alt) && indelCreatesStop(v, t, result.CDSPosition) {
 				result.Consequence = ConsequenceStopGainedInframeDel
 			}
-			// Check if in-frame deletion spans the stop codon (stop_lost)
+			// Check if in-frame deletion spans the stop codon (stop_lost).
+			//
+			// The span has to come from both genomic ends. CDSPosition names the
+			// LAST deleted base on a reverse-strand transcript, so adding refLen
+			// to it walks refLen past the real end and reaches the stop codon
+			// from anywhere nearby -- ordinary in-frame deletions were reported
+			// as stop_lost with a p.TerNNNXaaext*? protein change, where VEP has
+			// a plain deletion (CDK6 c.967_978del is p.L323_A326del).
 			if stopCodonCDSPos > 0 && result.CDSPosition > 0 {
 				indelEndCDS := result.CDSPosition + int64(refLen) - 1
+				if lo, hi := GenomicToCDS(v.Pos, t), GenomicToCDS(v.Pos+int64(refLen)-1, t); lo > 0 && hi > 0 {
+					indelEndCDS = lo
+					if hi > lo {
+						indelEndCDS = hi
+					}
+				}
 				if indelEndCDS >= stopCodonCDSPos {
 					result.Consequence = ConsequenceStopLost3PrimeUTR
 					if variantLeavesCDS(v, t, false) {

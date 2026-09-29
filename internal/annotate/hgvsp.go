@@ -40,6 +40,21 @@ func FormatHGVSp(result *ConsequenceResult) string {
 	// ProteinPosition guard to be robust against early-return code paths that
 	// may not set ProteinPosition.
 	if conseq == ConsequenceStartLost {
+		// VEP writes p.Met1? for the great majority (516 of 613 start_lost rows
+		// in a VEP111 MSK-IMPACT MAF) but names the affected residue when the
+		// change lands past the start codon: c.7del is p.V3?, c.4del is p.A2?.
+		// Both are the same p.<residue><position>? form; position 1 just
+		// happens to be Met. Only diverge when we have both, since some paths
+		// reach here without setting ProteinPosition.
+		if result.ProteinPosition > 1 && result.RefAA != 0 {
+			var b [32]byte
+			n := copy(b[:], "p.")
+			n += copy(b[n:], aaThree(result.RefAA))
+			n += putInt64(b[n:], result.ProteinPosition)
+			b[n] = '?'
+			n++
+			return string(b[:n])
+		}
 		return "p.Met1?"
 	}
 
