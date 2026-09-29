@@ -596,9 +596,14 @@ func TestDatahub_LargeDeletion5UTRSpanningStartCodon(t *testing.T) {
 	v := &vcf.Variant{Chrom: "1", Pos: 995, Ref: "AAAAAAAAAAATGGCTAA", Alt: "A"}
 	result := PredictConsequence(v, tr)
 
-	if result.Consequence != ConsequenceStartLost {
-		t.Errorf("large 5'UTR deletion spanning start codon should be start_lost, got %q",
-			result.Consequence)
+	// VEP pairs start_lost with 5_prime_UTR_variant when the variant begins
+	// upstream of the CDS. Across the VEP111 MSK-IMPACT MAF every such row does
+	// so -- SMAD4 c.-27_13del, MYCN c.-34_34del, CDH1 c.-33_14del and four more
+	// -- and emits no HGVSp, leaving genome-nexus to render its p.*N*
+	// placeholder. This test previously asserted the bare term.
+	if result.Consequence != ConsequenceStartLost5PrimeUTR {
+		t.Errorf("large 5'UTR deletion spanning start codon should be %q, got %q",
+			ConsequenceStartLost5PrimeUTR, result.Consequence)
 	}
 }
 

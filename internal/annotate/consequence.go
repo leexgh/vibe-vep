@@ -221,6 +221,16 @@ func PredictConsequence(v *vcf.Variant, t *cache.Transcript) *ConsequenceResult 
 				result.ProteinPosition = 1
 				result.Impact = GetImpact(result.Consequence)
 				result.HGVSp = FormatHGVSp(result)
+				// A variant that begins in the 5'UTR and runs into the start
+				// codon has no well-defined protein description; VEP emits none
+				// and genome-nexus renders the p.*N* placeholder from the
+				// protein position. f60b7a4 did this for variants reaching the
+				// start codon from inside the CDS, but one starting in the UTR
+				// is caught here first and returned before that point.
+				if variantLeavesCDS(v, t, true) {
+					result.Consequence = ConsequenceStartLost5PrimeUTR
+					result.HGVSp = ""
+				}
 				return result
 			}
 			// Check if variant from 3'UTR spans into the stop codon

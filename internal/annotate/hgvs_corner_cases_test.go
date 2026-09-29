@@ -368,8 +368,10 @@ func TestHGVS_MNV_Spanning5UTRIntoStartCodon(t *testing.T) {
 	v := &vcf.Variant{Chrom: "1", Pos: 999, Ref: "GA", Alt: "CT"}
 	result := PredictConsequence(v, tr)
 
-	assert.Equal(t, ConsequenceStartLost, result.Consequence,
-		"MNV spanning 5'UTR into start codon should be start_lost")
+	// Beginning in the 5'UTR, so VEP pairs the term with 5_prime_UTR_variant;
+	// see the note on TestDatahub_LargeDeletion5UTRSpanningStartCodon.
+	assert.Equal(t, ConsequenceStartLost5PrimeUTR, result.Consequence,
+		"MNV spanning 5'UTR into start codon should be start_lost,5_prime_UTR_variant")
 }
 
 // === Insertion at CDS position 1 boundary ===
