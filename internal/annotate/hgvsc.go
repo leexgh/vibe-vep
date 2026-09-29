@@ -499,6 +499,33 @@ func utr5DeletionShift(v *vcf.Variant, t *cache.Transcript) int {
 		return 0 // never reaches the CDS
 	}
 
+	// The 5'UTR tail is contiguous with the CDS, so this only applies when no
+	// intron sits between the deletion's start and the start codon -- i.e. the
+	// start and the first coding base share an exon. Without this check a
+	// deletion beginning in an INTRON walks the same way, counts intronic bases
+	// as 5'UTR and shifts against sequence that is not there, which regressed
+	// 83 rows of HGVSc.
+	startExon := t.FindExon(codingStart)
+	if startExon == nil {
+		return 0
+	}
+	firstCoding := codingStart
+	for i := int64(0); i <= int64(t.UTR5Len); i++ {
+		q := firstCoding
+		if t.IsReverseStrand() {
+			q = codingStart - i
+		} else {
+			q = codingStart + i
+		}
+		if GenomicToCDS(q, t) >= 1 {
+			firstCoding = q
+			break
+		}
+	}
+	if e := t.FindExon(firstCoding); e == nil || e != startExon {
+		return 0
+	}
+
 	// How far upstream of the CDS the deletion begins, by walking in.
 	var upstream int64
 	p := codingStart
