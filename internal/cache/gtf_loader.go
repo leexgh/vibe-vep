@@ -492,6 +492,12 @@ func (l *GENCODELoader) Load(c *Cache) error {
 						t.ProteinLength-- // subtract stop codon
 					}
 				}
+				// Keep a tail of 5'UTR so a deletion reaching upstream of the
+				// start codon can still be 3'-shifted (see UTR5TailBases).
+				if u := l.fasta.GetUTR5Tail(t.ID, UTR5TailBases); u != "" {
+					packed, n := PackDNA2Bit(strings.ToUpper(u))
+					t.UTR5Packed, t.UTR5Len = packed, uint16(n)
+				}
 				// Load CDS + 3'UTR for stop-codon scanning (frameshifts and
 				// stop-lost need to scan past the CDS end). The cap is measured:
 				// against VEP111 the furthest new stop sits 375 codons (1125bp)

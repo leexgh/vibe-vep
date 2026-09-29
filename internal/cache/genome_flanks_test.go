@@ -12,7 +12,7 @@ func TestPackDNA2BitRoundTrip(t *testing.T) {
 		if int(n) != len(want) {
 			t.Fatalf("PackDNA2Bit(%q) length = %d, want %d", want, n, len(want))
 		}
-		e := &Exon{IntronAfterPacked: buf, IntronAfterLen: n}
+		e := &Exon{IntronAfterPacked: buf, IntronAfterLen: uint8(n)}
 		var got strings.Builder
 		for i := 0; i < int(n); i++ {
 			b, ok := e.IntronAfterBase(i)
@@ -38,7 +38,7 @@ func TestPackDNA2BitTruncatesAtUnknownBase(t *testing.T) {
 	if n != 3 {
 		t.Fatalf("length = %d, want 3 (truncated at N)", n)
 	}
-	e := &Exon{IntronAfterPacked: buf, IntronAfterLen: n}
+	e := &Exon{IntronAfterPacked: buf, IntronAfterLen: uint8(n)}
 	if _, ok := e.IntronAfterBase(3); ok {
 		t.Error("base past the N should not be readable")
 	}

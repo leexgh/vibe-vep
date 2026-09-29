@@ -159,8 +159,10 @@ func fillFlanks(seq []byte, transcripts []*Transcript) {
 				// Coding orientation: the genomic 3' side precedes the exon.
 				before, after = ReverseComplementDNA(after), ReverseComplementDNA(before)
 			}
-			e.IntronBeforePacked, e.IntronBeforeLen = PackDNA2Bit(before)
-			e.IntronAfterPacked, e.IntronAfterLen = PackDNA2Bit(after)
+			var nb, na int
+			e.IntronBeforePacked, nb = PackDNA2Bit(before)
+			e.IntronAfterPacked, na = PackDNA2Bit(after)
+			e.IntronBeforeLen, e.IntronAfterLen = uint8(nb), uint8(na)
 		}
 	}
 }

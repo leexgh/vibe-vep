@@ -35,6 +35,12 @@ type Transcript struct {
 	CDSStart        int64  // CDS start (genomic, 1-based), 0 if non-coding
 	CDSEnd          int64  // CDS end (genomic, 1-based), 0 if non-coding
 	CDSSequence     string // Coding DNA sequence (loaded on demand)
+	// UTR5Packed holds up to UTR5TailBases of 5'UTR immediately preceding the
+	// CDS, 2-bit packed like the intron flanks. A deletion that starts
+	// upstream of the start codon needs these bases to 3'-shift; without
+	// them c.-28_12del cannot become c.-27_13del.
+	UTR5Packed      []byte
+	UTR5Len         uint16
 	// CDSStartOffset is how many bases of the first codon are missing from a
 	// 5'-incomplete CDS (GENCODE cds_start_NF): 0, 1 or 2. VEP numbers c.1 from
 	// the first base of that notional complete codon, so CDSSequence is padded
@@ -70,6 +76,17 @@ type Exon struct {
 	IntronAfterLen     uint8
 }
 
+// UTR5TailBases is how much 5'UTR is retained. Measured against VEP111, a
+// deletion reaching upstream of the start codon starts at most 330 bases out.
+const UTR5TailBases = 500
+
+// UTR5BaseAt returns the base at c.-k (k >= 1), the kth base upstream of the
+// start codon.
+func (t *Transcript) UTR5BaseAt(k int) (byte, bool) {
+	// The stored tail ends at c.-1, so c.-k sits that many from the end.
+	return unpackBase(t.UTR5Packed, int(t.UTR5Len), int(t.UTR5Len)-k)
+}
+
 // packedBases is the 2-bit alphabet; anything else (an N in an assembly gap)
 // cannot be encoded and truncates the flank, which is the right behaviour
 // anyway: a shift cannot be validated across a base we do not know.
@@ -77,9 +94,9 @@ const packedBases = "ACGT"
 
 // PackDNA2Bit encodes a DNA string two bits per base, stopping at the first
 // base outside ACGT. It returns the packed bytes and how many bases they hold.
-func PackDNA2Bit(s string) ([]byte, uint8) {
+func PackDNA2Bit(s string) ([]byte, int) {
 	n := 0
-	for n < len(s) && n < 255 {
+	for n < len(s) {
 		if strings.IndexByte(packedBases, s[n]) < 0 {
 			break
 		}
@@ -93,23 +110,23 @@ func PackDNA2Bit(s string) ([]byte, uint8) {
 		code := byte(strings.IndexByte(packedBases, s[i]))
 		buf[i/4] |= code << (uint(3-i%4) * 2)
 	}
-	return buf, uint8(n)
+	return buf, n
 }
 
 // IntronAfterBase returns the i-th base (0-based) of the intron flank 3' of the
 // exon in coding orientation.
 func (e *Exon) IntronAfterBase(i int) (byte, bool) {
-	return unpackBase(e.IntronAfterPacked, e.IntronAfterLen, i)
+	return unpackBase(e.IntronAfterPacked, int(e.IntronAfterLen), i)
 }
 
 // IntronBeforeBase returns the i-th base (0-based) of the intron flank 5' of
 // the exon in coding orientation.
 func (e *Exon) IntronBeforeBase(i int) (byte, bool) {
-	return unpackBase(e.IntronBeforePacked, e.IntronBeforeLen, i)
+	return unpackBase(e.IntronBeforePacked, int(e.IntronBeforeLen), i)
 }
 
-func unpackBase(buf []byte, n uint8, i int) (byte, bool) {
-	if i < 0 || i >= int(n) {
+func unpackBase(buf []byte, n, i int) (byte, bool) {
+	if i < 0 || i >= n {
 		return 0, false
 	}
 	return packedBases[(buf[i/4]>>(uint(3-i%4)*2))&3], true

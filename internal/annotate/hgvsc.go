@@ -345,6 +345,10 @@ func formatHGVScDeletion(v *vcf.Variant, t *cache.Transcript, prefix string, ref
 			// The donor flank did not reach; the next exon may be nearer.
 			k, _ = acceptorSideDeletionShift(v, t)
 		}
+		if k == 0 {
+			// Or the deletion starts upstream of the start codon.
+			k = utr5DeletionShift(v, t)
+		}
 		if k > 0 {
 			d := int64(k)
 			if t.IsReverseStrand() {
@@ -464,6 +468,84 @@ func formatInsertionInIntron(rotated []byte, exon *cache.Exon, t *cache.Transcri
 		return "c." + pos(start) + "_" + pos(end) + "dup"
 	}
 	return "c." + pos(end) + "_" + pos(end+1) + "ins" + string(rotated)
+}
+
+// utr5DeletionShift handles a pure deletion that starts upstream of the start
+// codon and ends inside the CDS.
+//
+// The base leaving the front sits in the 5'UTR, which the cache now keeps a
+// tail of, so the shift is computable where before it was not:
+//
+//	SMAD4  c.-28_12del -> c.-27_13del
+//	MYCN   c.-35_33del -> c.-34_34del
+//
+// c. numbering has no zero, so positions step from -1 straight to 1.
+// Returns how far the deletion may move 3'.
+func utr5DeletionShift(v *vcf.Variant, t *cache.Transcript) int {
+	refLen := len(v.Ref)
+	if refLen == 0 || len(v.Alt) != 0 || len(t.CDSSequence) == 0 || t.UTR5Len == 0 {
+		return 0
+	}
+	lo, hi := v.Pos, v.Pos+int64(refLen)-1
+	codingStart, codingEnd := lo, hi
+	if t.IsReverseStrand() {
+		codingStart, codingEnd = hi, lo
+	}
+	if GenomicToCDS(codingStart, t) >= 1 {
+		return 0 // starts inside the CDS; a different shape
+	}
+	endCDS := GenomicToCDS(codingEnd, t)
+	if endCDS < 1 {
+		return 0 // never reaches the CDS
+	}
+
+	// How far upstream of the CDS the deletion begins, by walking in.
+	var upstream int64
+	p := codingStart
+	for upstream <= int64(t.UTR5Len) {
+		if GenomicToCDS(p, t) >= 1 {
+			break
+		}
+		upstream++
+		if t.IsReverseStrand() {
+			p--
+		} else {
+			p++
+		}
+	}
+	if upstream < 1 || upstream > int64(t.UTR5Len) {
+		return 0
+	}
+
+	cds := t.CDSSequence
+	baseAt := func(c int64) (byte, bool) {
+		if c > 0 {
+			if int(c) > len(cds) {
+				return 0, false
+			}
+			return cds[c-1], true
+		}
+		return t.UTR5BaseAt(int(-c))
+	}
+	next := func(c int64) int64 {
+		if c == -1 {
+			return 1
+		}
+		return c + 1
+	}
+
+	front, back := -upstream, endCDS
+	k := 0
+	for {
+		leaving, ok1 := baseAt(front)
+		entering, ok2 := baseAt(next(back))
+		if !ok1 || !ok2 || leaving != entering {
+			break
+		}
+		front, back = next(front), next(back)
+		k++
+	}
+	return k
 }
 
 // acceptorSideDeletionShift handles the same shape as straddlingDeletionShift --
